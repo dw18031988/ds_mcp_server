@@ -2,12 +2,14 @@ export type AppConfig = {
   port: number;
   mcpPath: string;
   mcpBearerToken?: string;
+  restApiBearerToken?: string;
   designSystemBackendUrl?: string;
   internalAgentResultToken?: string;
   githubToken?: string;
   githubAllowedRepos: string[];
   githubDefaultBaseBranch: string;
   githubAllowedBranchPrefixes: string[];
+  githubMaxFileBytes: number;
 };
 
 function readPort(value: string | undefined): number {
@@ -15,6 +17,15 @@ function readPort(value: string | undefined): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed <= 0) {
     throw new Error(`Invalid PORT: ${value}`);
+  }
+  return parsed;
+}
+
+function readPositiveInteger(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`Invalid positive integer: ${value}`);
   }
   return parsed;
 }
@@ -32,6 +43,7 @@ export function loadConfig(): AppConfig {
     port: readPort(process.env.PORT),
     mcpPath: process.env.MCP_PATH || "/mcp",
     mcpBearerToken: process.env.MCP_BEARER_TOKEN || undefined,
+    restApiBearerToken: process.env.REST_API_BEARER_TOKEN || undefined,
     designSystemBackendUrl: process.env.DS_BACKEND_URL || undefined,
     internalAgentResultToken: process.env.INTERNAL_AGENT_RESULT_TOKEN || undefined,
     githubToken: process.env.GITHUB_TOKEN || undefined,
@@ -43,6 +55,7 @@ export function loadConfig(): AppConfig {
       "chore/",
       "docs/",
       "ai/"
-    ])
+    ]),
+    githubMaxFileBytes: readPositiveInteger(process.env.GITHUB_MAX_FILE_BYTES, 256_000)
   };
 }
