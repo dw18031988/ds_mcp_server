@@ -38,11 +38,29 @@ import { triggerWorkspaceAgent } from "./tools/workspaceAgentClient.js";
 import { handleAgentOpsRestApi } from "./agentops/router.js";
 
 const config = loadConfig();
-const serviceVersion = "0.6.0";
+const serviceVersion = "0.7.0";
+
+type UpstreamCallBucket = {
+  upstream: string;
+  method: string;
+  path: string;
+  count: number;
+  last_seen_at: string;
+  last_user_agent?: string;
+};
+
+const upstreamCallBuckets = new Map<string, UpstreamCallBucket>();
+let upstreamCallTotal = 0;
+let upstreamCallStartedAt = new Date().toISOString();
 
 function sendJson(res: ServerResponse, statusCode: number, body: unknown): void {
   res.writeHead(statusCode, { "content-type": "application/json" });
   res.end(JSON.stringify(body));
+}
+
+function sendHtml(res: ServerResponse, statusCode: number, body: string): void {
+  res.writeHead(statusCode, { "content-type": "text/html; charset=utf-8" });
+  res.end(body);
 }
 
 function sendBinary(
@@ -139,6 +157,191 @@ function requestBaseUrl(req: IncomingMessage): string {
   return `${proto}://${host}`.replace(/\/$/, "");
 }
 
+function headerValue(req: IncomingMessage, name: string): string | undefined {
+  return firstHeader(req.headers[name.toLowerCase()]);
+}
+
+function normalizePathForDashboard(pathname: string): string {
+  return pathname
+    .replace(/^\/api\/design-requests\/[^/]+$/, "/api/design-requests/{request_id}")
+    .replace(/^\/api\/agent-runs\/[^/]+$/, "/api/agent-runs/{run_id}")
+    .replace(/^\/internal\/agent-runs\/[^/]+\/result$/, "/internal/agent-runs/{run_id}/result")
+    .replace(
+      /^\/api\/github\/repos\/([^/]+)\/([^/]+)\/pull-requests\/\d+\/comments$/,
+      "/api/github/repos/{owner}/{repo}/pull-requests/{pr_number}/comments"
+    )
+    .replace(
+      /^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/runs\/\d+\/artifacts$/,
+      "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts"
+    )
+    .replace(
+      /^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/artifacts\/\d+\/zip$/,
+      "/api/github/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip"
+    )
+    .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)(\/.*)?$/, (_match, _owner, _repo, suffix) => {
+      return `/api/github/repos/{owner}/{repo}${suffix ?? ""}`;
+    });
+}
+
+function inferUpstream(req: IncomingMessage): string {
+  const explicitSource =
+    headerValue(req, "x-upstream") ||
+    headerValue(req, "x-source") ||
+    headerValue(req, "x-client-name") ||
+    headerValue(req, "x-chatgpt-connector-name");
+
+  if (explicitSource?.trim()) return explicitSource.trim();
+
+  const referer = headerValue(req, "referer");
+  if (referer) {
+    try {
+      return new URL(referer).hostname;
+    } catch {
+      return referer;
+    }
+  }
+
+  const forwardedHost = headerValue(req, "x-forwarded-host");
+  if (forwardedHost?.trim()) return forwardedHost.trim();
+
+  const userAgent = headerValue(req, "user-agent");
+  if (userAgent?.includes("ChatGPT")) return "chatgpt";
+  if (userAgent?.includes("curl")) return "curl";
+
+  return "unknown";
+}
+
+function trackUpstreamCall(req: IncomingMessage, url: URL): void {
+  if (url.pathname === "/dashboard/upstream-calls" || url.pathname === "/api/dashboard/upstream-calls") {
+    return;
+  }
+
+  const method = req.method || "UNKNOWN";
+  const path = normalizePathForDashboard(url.pathname);
+  const upstream = inferUpstream(req);
+  const key = `${upstream}\u0000${method}\u0000${path}`;
+  const now = new Date().toISOString();
+  const current = upstreamCallBuckets.get(key);
+
+  upstreamCallTotal += 1;
+
+  if (current) {
+    current.count += 1;
+    current.last_seen_at = now;
+    current.last_user_agent = headerValue(req, "user-agent");
+    return;
+  }
+
+  upstreamCallBuckets.set(key, {
+    upstream,
+    method,
+    path,
+    count: 1,
+    last_seen_at: now,
+    last_user_agent: headerValue(req, "user-agent")
+  });
+}
+
+function getUpstreamCallDashboard(limit = 50) {
+  const buckets = [...upstreamCallBuckets.values()].sort((a, b) => {
+    if (b.count !== a.count) return b.count - a.count;
+    return b.last_seen_at.localeCompare(a.last_seen_at);
+  });
+
+  const by_upstream = new Map<string, { upstream: string; count: number; last_seen_at: string }>();
+  for (const bucket of buckets) {
+    const current = by_upstream.get(bucket.upstream);
+    if (current) {
+      current.count += bucket.count;
+      if (bucket.last_seen_at > current.last_seen_at) current.last_seen_at = bucket.last_seen_at;
+    } else {
+      by_upstream.set(bucket.upstream, {
+        upstream: bucket.upstream,
+        count: bucket.count,
+        last_seen_at: bucket.last_seen_at
+      });
+    }
+  }
+
+  return {
+    ok: true,
+    service: "design-system-mcp",
+    started_at: upstreamCallStartedAt,
+    generated_at: new Date().toISOString(),
+    total_calls: upstreamCallTotal,
+    unique_buckets: buckets.length,
+    by_upstream: [...by_upstream.values()].sort((a, b) => b.count - a.count),
+    calls: buckets.slice(0, limit)
+  };
+}
+
+function renderUpstreamDashboardHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Upstream Call Dashboard</title>
+  <style>
+    :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; padding: 32px; background: #0f172a; color: #e2e8f0; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    p { color: #94a3b8; margin: 0 0 24px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .card { background: #111827; border: 1px solid #334155; border-radius: 16px; padding: 16px; }
+    .label { color: #94a3b8; font-size: 13px; }
+    .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; background: #111827; border: 1px solid #334155; border-radius: 16px; overflow: hidden; }
+    th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid #334155; vertical-align: top; }
+    th { color: #cbd5e1; background: #1e293b; font-size: 13px; }
+    td { color: #e2e8f0; font-size: 13px; }
+    code { color: #bfdbfe; }
+    .muted { color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <h1>Upstream Call Dashboard</h1>
+  <p>Inbound request counts grouped by upstream/source, method, and normalized route. Data is in-memory and resets on server restart.</p>
+  <div class="cards">
+    <div class="card"><div class="label">Total calls</div><div class="value" id="total">—</div></div>
+    <div class="card"><div class="label">Upstreams</div><div class="value" id="upstreams">—</div></div>
+    <div class="card"><div class="label">Route buckets</div><div class="value" id="buckets">—</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Upstream</th><th>Method</th><th>Route</th><th>Calls</th><th>Last seen</th><th>User agent</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="6" class="muted">Loading...</td></tr></tbody>
+  </table>
+  <script>
+    async function loadDashboard() {
+      const res = await fetch('/api/dashboard/upstream-calls?limit=100');
+      if (!res.ok) throw new Error('Failed to load dashboard data: ' + res.status);
+      const data = await res.json();
+      document.getElementById('total').textContent = data.total_calls;
+      document.getElementById('upstreams').textContent = data.by_upstream.length;
+      document.getElementById('buckets').textContent = data.unique_buckets;
+      document.getElementById('rows').innerHTML = data.calls.map((call) => `
+        <tr>
+          <td>${escapeHtml(call.upstream)}</td>
+          <td><code>${escapeHtml(call.method)}</code></td>
+          <td><code>${escapeHtml(call.path)}</code></td>
+          <td>${call.count}</td>
+          <td>${escapeHtml(call.last_seen_at)}</td>
+          <td class="muted">${escapeHtml(call.last_user_agent || '')}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="6" class="muted">No upstream calls recorded yet.</td></tr>';
+    }
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
+    }
+    loadDashboard().catch((error) => {
+      document.getElementById('rows').innerHTML = '<tr><td colspan="6" class="muted">' + escapeHtml(error.message) + '</td></tr>';
+    });
+    setInterval(loadDashboard, 10000);
+  </script>
+</body>
+</html>`;
+}
+
 function agentRunPublicView(run: ReturnType<typeof getAgentRun>) {
   if (!run) return undefined;
   return {
@@ -177,6 +380,8 @@ function getCapabilities() {
     ],
     rest_paths: [
       "/api/capabilities",
+      "/api/dashboard/upstream-calls",
+      "/dashboard/upstream-calls",
       "/api/tasks",
       "/api/tasks/{task_id}",
       "/api/tasks/{task_id}/links",
@@ -585,6 +790,17 @@ async function handleGitHubRestApi(
   }
 }
 
+async function handleDashboardApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  if (req.method === "GET" && url.pathname === "/api/dashboard/upstream-calls") {
+    setCorsHeaders(res);
+    const limit = asNumber(Number(url.searchParams.get("limit") || 50), 50);
+    sendJson(res, 200, getUpstreamCallDashboard(limit));
+    return true;
+  }
+
+  return false;
+}
+
 async function handleRestApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
   if (req.method === "OPTIONS" && url.pathname.startsWith("/api/")) {
     setCorsHeaders(res);
@@ -604,6 +820,9 @@ async function handleRestApi(req: IncomingMessage, res: ServerResponse, url: URL
     sendJson(res, 401, { error: "Unauthorized" });
     return true;
   }
+
+  const handledDashboardApi = await handleDashboardApi(req, res, url);
+  if (handledDashboardApi) return true;
 
   const handledAgentOpsApi = await handleAgentOpsRestApi(req, res, url, {
     config,
@@ -685,6 +904,7 @@ async function handleRestApi(req: IncomingMessage, res: ServerResponse, url: URL
 
 const httpServer = createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+  trackUpstreamCall(req, url);
 
   if (req.method === "GET" && url.pathname === "/") {
     return sendJson(res, 200, getCapabilities());
@@ -692,6 +912,10 @@ const httpServer = createServer(async (req, res) => {
 
   if (req.method === "GET" && url.pathname === "/health") {
     return sendJson(res, 200, { ok: true });
+  }
+
+  if (req.method === "GET" && url.pathname === "/dashboard/upstream-calls") {
+    return sendHtml(res, 200, renderUpstreamDashboardHtml());
   }
 
   const handledWorkspaceAgentCallback = await handleWorkspaceAgentCallback(req, res, url);
