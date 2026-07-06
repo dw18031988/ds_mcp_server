@@ -27,8 +27,35 @@ import {
 import { writeAuditEvent } from "./tools/auditLog.js";
 
 const serviceVersion = "0.7.0";
+import {
+  githubApplyTextPatch,
+  githubClosePullRequest,
+  githubCommitFiles,
+  githubDeleteFile,
+  githubDispatchWorkflow,
+  githubListTree,
+  githubMergePullRequest,
+  githubReadBinaryFile
+} from "./tools/githubAdvancedClient.js";
+import { writeAuditEvent } from "./tools/auditLog.js";
 
-function binaryOutput(output: GitHubBinaryResult) {
+const serviceVersion = "0.7.0";
+
+type TextContent = { type: "text"; text: string };
+type ToolTextResult = {
+  structuredContent: Record<string, unknown>;
+  content: TextContent[];
+};
+
+function toStructuredContent(output: unknown): Record<string, unknown> {
+  if (output && typeof output === "object" && !Array.isArray(output)) {
+    return output as Record<string, unknown>;
+  }
+
+  return { value: output };
+}
+
+function binaryOutput(output: GitHubBinaryResult): ToolTextResult {
   const structured = {
     owner: output.owner,
     repo: output.repo,
@@ -41,7 +68,16 @@ function binaryOutput(output: GitHubBinaryResult) {
 
   return {
     structuredContent: structured,
-    content: [{ type: "text" as const, text: JSON.stringify(structured) }]
+    content: [{ type: "text", text: JSON.stringify(structured) }]
+  };
+}
+
+function textOutput(output: unknown): ToolTextResult {
+  const structured = toStructuredContent(output);
+
+  return {
+    structuredContent: structured,
+    content: [{ type: "text", text: JSON.stringify(output) }]
   };
 }
 
@@ -73,10 +109,7 @@ export function createMcpServer(config: AppConfig): McpServer {
         version: serviceVersion
       };
 
-      return {
-        structuredContent: output,
-        content: [{ type: "text", text: JSON.stringify(output) }]
-      };
+      return textOutput(output);
     }
   );
 
@@ -102,14 +135,7 @@ export function createMcpServer(config: AppConfig): McpServer {
         readOnlyHint: true
       }
     },
-    async ({ request_id }) => {
-      const output = await getDesignRequest(request_id);
-
-      return {
-        structuredContent: output,
-        content: [{ type: "text", text: JSON.stringify(output) }]
-      };
-    }
+    async ({ request_id }) => textOutput(await getDesignRequest(request_id))
   );
 
   server.registerTool(
@@ -145,7 +171,6 @@ export function createMcpServer(config: AppConfig): McpServer {
     async (input) => {
       await submitAgentResult(input);
       const forwardResult = await forwardAgentResultToBackend(config, input);
-
       const output = {
         ok: true,
         request_id: input.request_id,
@@ -153,18 +178,13 @@ export function createMcpServer(config: AppConfig): McpServer {
         forwarded_to_backend: forwardResult.forwarded,
         backend_status: forwardResult.status
       };
-
       writeAuditEvent({
         action: "ds_submit_agent_result",
         source: "mcp",
         request_id: input.request_id,
         status: "success"
       });
-
-      return {
-        structuredContent: output,
-        content: [{ type: "text", text: JSON.stringify(output) }]
-      };
+      return textOutput(output);
     }
   );
 
@@ -179,13 +199,7 @@ export function createMcpServer(config: AppConfig): McpServer {
       },
       annotations: { readOnlyHint: true }
     },
-    async (input) => {
-      const output = await githubGetRepo(config, input);
-      return {
-        structuredContent: output,
-        content: [{ type: "text", text: JSON.stringify(output) }]
-      };
-    }
+    async (input) => textOutput(await githubGetRepo(config, input))
   );
 
   server.registerTool(
@@ -201,13 +215,39 @@ export function createMcpServer(config: AppConfig): McpServer {
       },
       annotations: { readOnlyHint: true }
     },
-    async (input) => {
-      const output = await githubReadFile(config, input);
-      return {
-        structuredContent: output,
-        content: [{ type: "text", text: JSON.stringify(output) }]
-      };
-    }
+    async (input) => textOutput(await githubReadFile(config, input))
+  );
+
+  server.registerTool(
+    "github_read_binary_file",
+    {
+      title: "Read GitHub binary file",
+      description: "Read a file as base64 from an allowlisted GitHub repository.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        path: z.string().min(1),
+        ref: z.string().optional()
+      },
+      annotations: { readOnlyHint: true }
+    },
+    async (input) => textOutput(await githubReadBinaryFile(config, input))
+  );
+
+  server.registerTool(
+    "github_list_tree",
+    {
+      title: "List GitHub repository tree",
+      description: "List files and folders from a branch, tag, or commit in an allowlisted repository.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        ref: z.string().optional(),
+        recursive: z.boolean().optional()
+      },
+      annotations: { readOnlyHint: true }
+    },
+    async (input) => textOutput(await githubListTree(config, input))
   );
 
   server.registerTool(
@@ -278,10 +318,7 @@ export function createMcpServer(config: AppConfig): McpServer {
         branch: output.branch,
         status: "success"
       });
-      return {
-        structuredContent: output,
-        content: [{ type: "text", text: JSON.stringify(output) }]
-      };
+      return textOutput(output);
     }
   );
 
@@ -312,10 +349,7 @@ export function createMcpServer(config: AppConfig): McpServer {
         path: input.path,
         status: "success"
       });
-      return {
-        structuredContent: output,
-        content: [{ type: "text", text: JSON.stringify(output) }]
-      };
+      return textOutput(output);
     }
   );
 
@@ -456,10 +490,90 @@ export function createMcpServer(config: AppConfig): McpServer {
         pr_number: output.number,
         status: "success"
       });
-      return {
-        structuredContent: output,
-        content: [{ type: "text", text: JSON.stringify(output) }]
-      };
+      return textOutput(output);
+    }
+  );
+
+  server.registerTool(
+    "github_merge_pr",
+    {
+      title: "Merge GitHub pull request",
+      description: "Merge a pull request in an allowlisted repository. Default merge method is squash.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        pr_number: z.number().int().positive(),
+        commit_title: z.string().optional(),
+        commit_message: z.string().optional(),
+        merge_method: z.enum(["merge", "squash", "rebase"]).optional()
+      },
+      annotations: { readOnlyHint: false }
+    },
+    async (input) => {
+      const output = await githubMergePullRequest(config, input);
+      writeAuditEvent({
+        action: "github_merge_pr",
+        source: "mcp",
+        owner: input.owner,
+        repo: input.repo,
+        pr_number: input.pr_number,
+        status: "success"
+      });
+      return textOutput(output);
+    }
+  );
+
+  server.registerTool(
+    "github_close_pr",
+    {
+      title: "Close GitHub pull request",
+      description: "Close a pull request without merging it.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        pr_number: z.number().int().positive()
+      },
+      annotations: { readOnlyHint: false }
+    },
+    async (input) => {
+      const output = await githubClosePullRequest(config, input);
+      writeAuditEvent({
+        action: "github_close_pr",
+        source: "mcp",
+        owner: input.owner,
+        repo: input.repo,
+        pr_number: input.pr_number,
+        status: "success"
+      });
+      return textOutput(output);
+    }
+  );
+
+  server.registerTool(
+    "github_dispatch_workflow",
+    {
+      title: "Dispatch GitHub Actions workflow",
+      description:
+        "Trigger a GitHub Actions workflow_dispatch run for tests or validation in an allowlisted repository.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        workflow_id: z.union([z.string().min(1), z.number().int().positive()]),
+        ref: z.string().min(1),
+        inputs: z.record(z.union([z.string(), z.number(), z.boolean()])).optional()
+      },
+      annotations: { readOnlyHint: false }
+    },
+    async (input) => {
+      const output = await githubDispatchWorkflow(config, input);
+      writeAuditEvent({
+        action: "github_dispatch_workflow",
+        source: "mcp",
+        owner: input.owner,
+        repo: input.repo,
+        status: "success"
+      });
+      return textOutput(output);
     }
   );
 
@@ -568,13 +682,7 @@ export function createMcpServer(config: AppConfig): McpServer {
       },
       annotations: { readOnlyHint: true }
     },
-    async (input) => {
-      const output = await githubGetWorkflowRuns(config, input);
-      return {
-        structuredContent: output,
-        content: [{ type: "text", text: JSON.stringify(output) }]
-      };
-    }
+    async (input) => textOutput(await githubGetWorkflowRuns(config, input))
   );
 
   server.registerTool(
@@ -590,13 +698,7 @@ export function createMcpServer(config: AppConfig): McpServer {
       },
       annotations: { readOnlyHint: true }
     },
-    async (input) => {
-      const output = await githubListWorkflowRunArtifacts(config, input);
-      return {
-        structuredContent: output,
-        content: [{ type: "text", text: JSON.stringify(output) }]
-      };
-    }
+    async (input) => textOutput(await githubListWorkflowRunArtifacts(config, input))
   );
 
   server.registerTool(
@@ -654,10 +756,7 @@ export function createMcpServer(config: AppConfig): McpServer {
         pr_number: input.pr_number,
         status: "success"
       });
-      return {
-        structuredContent: output,
-        content: [{ type: "text", text: JSON.stringify(output) }]
-      };
+      return textOutput(output);
     }
   );
 
