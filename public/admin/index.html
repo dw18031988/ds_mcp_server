@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DW AgentOps Tasks</title>
+    <link rel="stylesheet" href="/admin/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">DW AgentOps</p>
+        <h1>Tasks Control</h1>
+      </div>
+      <div class="topbar-actions">
+        <input id="apiToken" type="password" placeholder="REST API bearer token" autocomplete="off" />
+        <button id="saveTokenButton" class="secondary">Save token</button>
+        <button id="refreshButton">Refresh</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel sidebar">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Overview</p>
+            <h2>Dashboard</h2>
+          </div>
+          <span id="apiStatus" class="pill muted">loading</span>
+        </div>
+
+        <div id="metrics" class="metrics"></div>
+
+        <form id="createTaskForm" class="stack form-block">
+          <h3>Create task</h3>
+          <label>
+            Title
+            <input name="title" required placeholder="Review tenant contract CTA" />
+          </label>
+          <label>
+            Description
+            <textarea name="description" rows="4" placeholder="Context, expected outcome, constraints"></textarea>
+          </label>
+          <div class="grid-2">
+            <label>
+              Type
+              <select name="task_type">
+                <option value="task">task</option>
+                <option value="spec">spec</option>
+                <option value="design_review">design_review</option>
+                <option value="implementation">implementation</option>
+                <option value="validation">validation</option>
+                <option value="bug">bug</option>
+              </select>
+            </label>
+            <label>
+              Priority
+              <select name="priority">
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+                <option value="urgent">urgent</option>
+                <option value="low">low</option>
+              </select>
+            </label>
+          </div>
+          <button type="submit">Create</button>
+        </form>
+      </section>
+
+      <section class="panel main-panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">Workflow</p>
+            <h2>Tasks</h2>
+          </div>
+          <div class="filters">
+            <input id="searchInput" placeholder="Search title or id" />
+            <select id="stateFilter">
+              <option value="">All states</option>
+              <option value="draft">draft</option>
+              <option value="ready">ready</option>
+              <option value="blocked">blocked</option>
+              <option value="agent_running">agent_running</option>
+              <option value="pending_review">pending_review</option>
+              <option value="pending_approval">pending_approval</option>
+              <option value="write_running">write_running</option>
+              <option value="validation_running">validation_running</option>
+              <option value="completed">completed</option>
+              <option value="failed">failed</option>
+              <option value="cancelled">cancelled</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="tasksList" class="tasks-list"></div>
+      </section>
+
+      <aside class="panel detail-panel">
+        <div id="taskDetail" class="empty-state">
+          Select a task to inspect workflow, links, and timeline.
+        </div>
+      </aside>
+    </main>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <script src="/admin/app.js" type="module"></script>
+  </body>
+</html>
