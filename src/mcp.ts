@@ -4,18 +4,29 @@ import type { AppConfig } from "./config.js";
 import { forwardAgentResultToBackend } from "./tools/backendClient.js";
 import { getDesignRequest, submitAgentResult } from "./tools/designSystemStore.js";
 import {
+  githubApplyTextPatch,
+  githubClosePullRequest,
   githubCommentPullRequest,
+  githubCommitFiles,
   githubCreateBranch,
   githubCreatePullRequest,
+  githubDeleteFile,
+  githubDispatchWorkflow,
   githubDownloadArchiveZip,
   githubDownloadWorkflowArtifactZip,
   githubGetRepo,
   githubGetWorkflowRuns,
+  githubListTree,
   githubListWorkflowRunArtifacts,
+  githubMergePullRequest,
+  githubReadBinaryFile,
   githubReadFile,
   githubUpsertFile,
   type GitHubBinaryResult
 } from "./tools/githubClient.js";
+import { writeAuditEvent } from "./tools/auditLog.js";
+
+const serviceVersion = "0.7.0";
 import {
   githubApplyTextPatch,
   githubClosePullRequest,
@@ -240,6 +251,50 @@ export function createMcpServer(config: AppConfig): McpServer {
   );
 
   server.registerTool(
+    "github_read_binary_file",
+    {
+      title: "Read GitHub binary file",
+      description: "Read a file as base64 from an allowlisted GitHub repository.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        path: z.string().min(1),
+        ref: z.string().optional()
+      },
+      annotations: { readOnlyHint: true }
+    },
+    async (input) => {
+      const output = await githubReadBinaryFile(config, input);
+      return {
+        structuredContent: output,
+        content: [{ type: "text", text: JSON.stringify(output) }]
+      };
+    }
+  );
+
+  server.registerTool(
+    "github_list_tree",
+    {
+      title: "List GitHub repository tree",
+      description: "List files and folders from a branch, tag, or commit in an allowlisted repository.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        ref: z.string().optional(),
+        recursive: z.boolean().optional()
+      },
+      annotations: { readOnlyHint: true }
+    },
+    async (input) => {
+      const output = await githubListTree(config, input);
+      return {
+        structuredContent: output,
+        content: [{ type: "text", text: JSON.stringify(output) }]
+      };
+    }
+  );
+
+  server.registerTool(
     "github_create_branch",
     {
       title: "Create GitHub branch",
@@ -328,7 +383,10 @@ export function createMcpServer(config: AppConfig): McpServer {
         path: input.path,
         status: "success"
       });
-      return textOutput(output);
+      return {
+        structuredContent: output,
+        content: [{ type: "text", text: JSON.stringify(output) }]
+      };
     }
   );
 
@@ -366,7 +424,10 @@ export function createMcpServer(config: AppConfig): McpServer {
         branch: input.branch,
         status: "success"
       });
-      return textOutput(output);
+      return {
+        structuredContent: output,
+        content: [{ type: "text", text: JSON.stringify(output) }]
+      };
     }
   );
 
@@ -395,7 +456,10 @@ export function createMcpServer(config: AppConfig): McpServer {
         path: input.path,
         status: "success"
       });
-      return textOutput(output);
+      return {
+        structuredContent: output,
+        content: [{ type: "text", text: JSON.stringify(output) }]
+      };
     }
   );
 
@@ -510,6 +574,98 @@ export function createMcpServer(config: AppConfig): McpServer {
         status: "success"
       });
       return textOutput(output);
+    }
+  );
+
+  server.registerTool(
+    "github_merge_pr",
+    {
+      title: "Merge GitHub pull request",
+      description: "Merge a pull request in an allowlisted repository. Default merge method is squash.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        pr_number: z.number().int().positive(),
+        commit_title: z.string().optional(),
+        commit_message: z.string().optional(),
+        merge_method: z.enum(["merge", "squash", "rebase"]).optional()
+      },
+      annotations: { readOnlyHint: false }
+    },
+    async (input) => {
+      const output = await githubMergePullRequest(config, input);
+      writeAuditEvent({
+        action: "github_merge_pr",
+        source: "mcp",
+        owner: input.owner,
+        repo: input.repo,
+        pr_number: input.pr_number,
+        status: "success"
+      });
+      return {
+        structuredContent: output,
+        content: [{ type: "text", text: JSON.stringify(output) }]
+      };
+    }
+  );
+
+  server.registerTool(
+    "github_close_pr",
+    {
+      title: "Close GitHub pull request",
+      description: "Close a pull request without merging it.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        pr_number: z.number().int().positive()
+      },
+      annotations: { readOnlyHint: false }
+    },
+    async (input) => {
+      const output = await githubClosePullRequest(config, input);
+      writeAuditEvent({
+        action: "github_close_pr",
+        source: "mcp",
+        owner: input.owner,
+        repo: input.repo,
+        pr_number: input.pr_number,
+        status: "success"
+      });
+      return {
+        structuredContent: output,
+        content: [{ type: "text", text: JSON.stringify(output) }]
+      };
+    }
+  );
+
+  server.registerTool(
+    "github_dispatch_workflow",
+    {
+      title: "Dispatch GitHub Actions workflow",
+      description:
+        "Trigger a GitHub Actions workflow_dispatch run for tests or validation in an allowlisted repository.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        workflow_id: z.union([z.string().min(1), z.number().int().positive()]),
+        ref: z.string().min(1),
+        inputs: z.record(z.union([z.string(), z.number(), z.boolean()])).optional()
+      },
+      annotations: { readOnlyHint: false }
+    },
+    async (input) => {
+      const output = await githubDispatchWorkflow(config, input);
+      writeAuditEvent({
+        action: "github_dispatch_workflow",
+        source: "mcp",
+        owner: input.owner,
+        repo: input.repo,
+        status: "success"
+      });
+      return {
+        structuredContent: output,
+        content: [{ type: "text", text: JSON.stringify(output) }]
+      };
     }
   );
 
