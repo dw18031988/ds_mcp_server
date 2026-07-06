@@ -28,14 +28,14 @@ import {
   completeAgentRun,
   createAgentRun,
   getAgentRun,
-  markAgentRunFailed,
   markAgentRunTriggered,
   markAgentRunTriggering
 } from "./tools/agentRunStore.js";
 import { triggerWorkspaceAgent } from "./tools/workspaceAgentClient.js";
+import { handleAgentOpsRestApi } from "./agentops/router.js";
 
 const config = loadConfig();
-const serviceVersion = "0.4.0";
+const serviceVersion = "0.5.0";
 
 function sendJson(res: ServerResponse, statusCode: number, body: unknown): void {
   res.writeHead(statusCode, { "content-type": "application/json" });
@@ -44,7 +44,7 @@ function sendJson(res: ServerResponse, statusCode: number, body: unknown): void 
 
 function setCorsHeaders(res: ServerResponse): void {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, GET, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "POST, GET, PATCH, DELETE, OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
     "authorization, content-type, mcp-session-id"
@@ -152,6 +152,11 @@ function getCapabilities() {
     ],
     rest_paths: [
       "/api/capabilities",
+      "/api/tasks",
+      "/api/tasks/{task_id}",
+      "/api/tasks/{task_id}/links",
+      "/api/tasks/{task_id}/transitions",
+      "/api/tasks/{task_id}/events",
       "/api/agent-runs",
       "/api/agent-runs/{run_id}",
       "/internal/agent-runs/{run_id}/result",
@@ -178,7 +183,8 @@ function getCapabilities() {
       workspace_agent_trigger_configured: Boolean(
         config.workspaceAgentTriggerId && config.workspaceAgentToken
       ),
-      workspace_agent_callback_token_configured: Boolean(config.workspaceAgentCallbackToken)
+      workspace_agent_callback_token_configured: Boolean(config.workspaceAgentCallbackToken),
+      supabase_configured: Boolean(config.supabaseUrl && config.supabaseServiceRoleKey)
     }
   };
 }
@@ -521,6 +527,14 @@ async function handleRestApi(req: IncomingMessage, res: ServerResponse, url: URL
     sendJson(res, 401, { error: "Unauthorized" });
     return true;
   }
+
+  const handledAgentOpsApi = await handleAgentOpsRestApi(req, res, url, {
+    config,
+    sendJson,
+    setCorsHeaders,
+    readJsonBody
+  });
+  if (handledAgentOpsApi) return true;
 
   const handledWorkspaceAgentApi = await handleWorkspaceAgentRestApi(req, res, url);
   if (handledWorkspaceAgentApi) return true;
