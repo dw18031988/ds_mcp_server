@@ -50,8 +50,8 @@ type UpstreamCallBucket = {
 };
 
 const upstreamCallBuckets = new Map<string, UpstreamCallBucket>();
+const upstreamCallStartedAt = new Date().toISOString();
 let upstreamCallTotal = 0;
-let upstreamCallStartedAt = new Date().toISOString();
 
 function sendJson(res: ServerResponse, statusCode: number, body: unknown): void {
   res.writeHead(statusCode, { "content-type": "application/json" });
@@ -166,18 +166,9 @@ function normalizePathForDashboard(pathname: string): string {
     .replace(/^\/api\/design-requests\/[^/]+$/, "/api/design-requests/{request_id}")
     .replace(/^\/api\/agent-runs\/[^/]+$/, "/api/agent-runs/{run_id}")
     .replace(/^\/internal\/agent-runs\/[^/]+\/result$/, "/internal/agent-runs/{run_id}/result")
-    .replace(
-      /^\/api\/github\/repos\/([^/]+)\/([^/]+)\/pull-requests\/\d+\/comments$/,
-      "/api/github/repos/{owner}/{repo}/pull-requests/{pr_number}/comments"
-    )
-    .replace(
-      /^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/runs\/\d+\/artifacts$/,
-      "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts"
-    )
-    .replace(
-      /^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/artifacts\/\d+\/zip$/,
-      "/api/github/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip"
-    )
+    .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)\/pull-requests\/\d+\/comments$/, "/api/github/repos/{owner}/{repo}/pull-requests/{pr_number}/comments")
+    .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/runs\/\d+\/artifacts$/, "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts")
+    .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/artifacts\/\d+\/zip$/, "/api/github/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip")
     .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)(\/.*)?$/, (_match, _owner, _repo, suffix) => {
       return `/api/github/repos/{owner}/{repo}${suffix ?? ""}`;
     });
@@ -275,71 +266,25 @@ function getUpstreamCallDashboard(limit = 50) {
   };
 }
 
+function escapeHtml(value: unknown): string {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function renderUpstreamDashboardHtml(): string {
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Upstream Call Dashboard</title>
-  <style>
-    :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    body { margin: 0; padding: 32px; background: #0f172a; color: #e2e8f0; }
-    h1 { margin: 0 0 8px; font-size: 28px; }
-    p { color: #94a3b8; margin: 0 0 24px; }
-    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
-    .card { background: #111827; border: 1px solid #334155; border-radius: 16px; padding: 16px; }
-    .label { color: #94a3b8; font-size: 13px; }
-    .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
-    table { width: 100%; border-collapse: collapse; background: #111827; border: 1px solid #334155; border-radius: 16px; overflow: hidden; }
-    th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid #334155; vertical-align: top; }
-    th { color: #cbd5e1; background: #1e293b; font-size: 13px; }
-    td { color: #e2e8f0; font-size: 13px; }
-    code { color: #bfdbfe; }
-    .muted { color: #94a3b8; }
-  </style>
-</head>
-<body>
-  <h1>Upstream Call Dashboard</h1>
-  <p>Inbound request counts grouped by upstream/source, method, and normalized route. Data is in-memory and resets on server restart.</p>
-  <div class="cards">
-    <div class="card"><div class="label">Total calls</div><div class="value" id="total">—</div></div>
-    <div class="card"><div class="label">Upstreams</div><div class="value" id="upstreams">—</div></div>
-    <div class="card"><div class="label">Route buckets</div><div class="value" id="buckets">—</div></div>
-  </div>
-  <table>
-    <thead><tr><th>Upstream</th><th>Method</th><th>Route</th><th>Calls</th><th>Last seen</th><th>User agent</th></tr></thead>
-    <tbody id="rows"><tr><td colspan="6" class="muted">Loading...</td></tr></tbody>
-  </table>
-  <script>
-    async function loadDashboard() {
-      const res = await fetch('/api/dashboard/upstream-calls?limit=100');
-      if (!res.ok) throw new Error('Failed to load dashboard data: ' + res.status);
-      const data = await res.json();
-      document.getElementById('total').textContent = data.total_calls;
-      document.getElementById('upstreams').textContent = data.by_upstream.length;
-      document.getElementById('buckets').textContent = data.unique_buckets;
-      document.getElementById('rows').innerHTML = data.calls.map((call) => `
-        <tr>
-          <td>${escapeHtml(call.upstream)}</td>
-          <td><code>${escapeHtml(call.method)}</code></td>
-          <td><code>${escapeHtml(call.path)}</code></td>
-          <td>${call.count}</td>
-          <td>${escapeHtml(call.last_seen_at)}</td>
-          <td class="muted">${escapeHtml(call.last_user_agent || '')}</td>
-        </tr>
-      `).join('') || '<tr><td colspan="6" class="muted">No upstream calls recorded yet.</td></tr>';
-    }
-    function escapeHtml(value) {
-      return String(value).replace(/[&<>'"]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
-    }
-    loadDashboard().catch((error) => {
-      document.getElementById('rows').innerHTML = '<tr><td colspan="6" class="muted">' + escapeHtml(error.message) + '</td></tr>';
-    });
-    setInterval(loadDashboard, 10000);
-  </script>
-</body>
-</html>`;
+  const dashboard = getUpstreamCallDashboard(100);
+  const rows = dashboard.calls
+    .map((call) => {
+      return `<tr><td>${escapeHtml(call.upstream)}</td><td><code>${escapeHtml(call.method)}</code></td><td><code>${escapeHtml(call.path)}</code></td><td>${call.count}</td><td>${escapeHtml(call.last_seen_at)}</td><td class="muted">${escapeHtml(call.last_user_agent || "")}</td></tr>`;
+    })
+    .join("");
+  const bodyRows = rows || '<tr><td colspan="6" class="muted">No upstream calls recorded yet.</td></tr>';
+
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta http-equiv="refresh" content="10"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Upstream Call Dashboard</title><style>:root{color-scheme:light dark;font-family:Inter,ui-sans-serif,system-ui,sans-serif}body{margin:0;padding:32px;background:#0f172a;color:#e2e8f0}h1{margin:0 0 8px;font-size:28px}p{color:#94a3b8;margin:0 0 24px}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px}.card{background:#111827;border:1px solid #334155;border-radius:16px;padding:16px}.label{color:#94a3b8;font-size:13px}.value{font-size:28px;font-weight:700;margin-top:4px}table{width:100%;border-collapse:collapse;background:#111827;border:1px solid #334155;border-radius:16px;overflow:hidden}th,td{text-align:left;padding:12px 14px;border-bottom:1px solid #334155;vertical-align:top}th{color:#cbd5e1;background:#1e293b;font-size:13px}td{color:#e2e8f0;font-size:13px}code{color:#bfdbfe}.muted{color:#94a3b8}</style></head><body><h1>Upstream Call Dashboard</h1><p>Inbound request counts grouped by upstream/source, method, and normalized route. Data is in-memory and resets on server restart. This page refreshes every 10 seconds.</p><div class="cards"><div class="card"><div class="label">Total calls</div><div class="value">${dashboard.total_calls}</div></div><div class="card"><div class="label">Upstreams</div><div class="value">${dashboard.by_upstream.length}</div></div><div class="card"><div class="label">Route buckets</div><div class="value">${dashboard.unique_buckets}</div></div></div><table><thead><tr><th>Upstream</th><th>Method</th><th>Route</th><th>Calls</th><th>Last seen</th><th>User agent</th></tr></thead><tbody>${bodyRows}</tbody></table></body></html>`;
 }
 
 function agentRunPublicView(run: ReturnType<typeof getAgentRun>) {
