@@ -30,7 +30,21 @@ import { writeAuditEvent } from "./tools/auditLog.js";
 
 const serviceVersion = "0.7.0";
 
-function binaryOutput(output: GitHubBinaryResult) {
+type TextContent = { type: "text"; text: string };
+type ToolTextResult = {
+  structuredContent: Record<string, unknown>;
+  content: TextContent[];
+};
+
+function toStructuredContent(output: unknown): Record<string, unknown> {
+  if (output && typeof output === "object" && !Array.isArray(output)) {
+    return output as Record<string, unknown>;
+  }
+
+  return { value: output };
+}
+
+function binaryOutput(output: GitHubBinaryResult): ToolTextResult {
   const structured = {
     owner: output.owner,
     repo: output.repo,
@@ -43,14 +57,16 @@ function binaryOutput(output: GitHubBinaryResult) {
 
   return {
     structuredContent: structured,
-    content: [{ type: "text" as const, text: JSON.stringify(structured) }]
+    content: [{ type: "text", text: JSON.stringify(structured) }]
   };
 }
 
-function textOutput(output: unknown) {
+function textOutput(output: unknown): ToolTextResult {
+  const structured = toStructuredContent(output);
+
   return {
-    structuredContent: output,
-    content: [{ type: "text" as const, text: JSON.stringify(output) }]
+    structuredContent: structured,
+    content: [{ type: "text", text: JSON.stringify(output) }]
   };
 }
 
