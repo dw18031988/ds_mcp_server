@@ -1,0 +1,175 @@
+openapi: 3.1.0
+
+info:
+  title: Design System Review API
+  version: 1.0.0
+  description: API REST wrapper cho Design System Review Agent. Không gọi trực tiếp MCP /mcp.
+
+servers:
+  - url: https://ds-mcp-server-theta.vercel.app
+
+paths:
+  /health:
+    get:
+      summary: Kiểm tra server còn sống
+      operationId: healthCheck
+      x-openai-isConsequential: false
+      responses:
+        "200":
+          description: Server hoạt động
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                required:
+                  - ok
+
+  /api/design-requests/{request_id}:
+    get:
+      summary: Lấy design request theo request_id
+      operationId: getDesignRequest
+      x-openai-isConsequential: false
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: Mã design request, ví dụ DSR-001
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Thông tin design request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DesignRequest"
+        "404":
+          description: Không tìm thấy design request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DesignRequest"
+
+  /api/agent-results:
+    post:
+      summary: Gửi kết quả review của agent về hệ thống
+      operationId: submitAgentResult
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentResultInput"
+      responses:
+        "200":
+          description: Đã lưu kết quả agent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  request_id:
+                    type: string
+                  stored:
+                    type: boolean
+                  forwarded_to_backend:
+                    type: boolean
+                  backend_status:
+                    type: integer
+                required:
+                  - ok
+                  - request_id
+                  - stored
+                  - forwarded_to_backend
+        "400":
+          description: Payload không hợp lệ
+
+components:
+  schemas:
+    DesignRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          example: DSR-001
+        title:
+          type: string
+          example: Review InvoiceCard mobile layout
+        project:
+          type: string
+          example: rental_home
+        status:
+          type: string
+          enum:
+            - open
+            - in_review
+            - approved
+            - rejected
+            - not_found
+        requirement:
+          type: string
+        figmaUrl:
+          type: string
+        githubUrl:
+          type: string
+      required:
+        - id
+        - title
+        - project
+        - status
+        - requirement
+
+    FrontendTask:
+      type: object
+      properties:
+        title:
+          type: string
+        acceptance_criteria:
+          type: array
+          items:
+            type: string
+      required:
+        - title
+        - acceptance_criteria
+
+    AgentResultInput:
+      type: object
+      properties:
+        request_id:
+          type: string
+          example: DSR-001
+        decision:
+          type: string
+          enum:
+            - approve
+            - revise
+            - reject
+        summary:
+          type: string
+        risk_level:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+        frontend_tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/FrontendTask"
+        validation:
+          type: array
+          items:
+            type: string
+      required:
+        - request_id
+        - decision
+        - summary
+        - risk_level
+        - frontend_tasks
+        - validation
