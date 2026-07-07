@@ -5,10 +5,10 @@
 - [x] Task 1: Add design and implementation checklist.
 - [x] Task 2: Add task/workflow schemas.
 - [x] Task 3: Add in-memory task store and state engine MVP.
-- [x] Task 4: Add REST task API adapter.
-- [ ] Task 5: Add GitHub event ingestion.
-- [ ] Task 6: Wire APIs into server router.
-- [ ] Task 7: Update README.
+- [x] Task 4: Add REST task APIs.
+- [x] Task 5: Add GitHub event ingestion.
+- [x] Task 6: Wire APIs into server router.
+- [x] Task 7: Update README.
 - [x] Task 8: Open PR and monitor CI.
 
 ## Flow
@@ -35,6 +35,7 @@ If CI fails, wait_github_ci creates fix_ci. After fix_ci succeeds, workflow wait
 - GET /api/workflows/{workflow_id}
 - POST /api/async-tasks/claim
 - POST /api/async-tasks/{task_id}/result
+- POST /api/webhooks/github
 
 ## Design decision
 
@@ -42,4 +43,4 @@ External CI event input is the primary CI signal. Polling is only fallback recon
 
 ## Implementation note
 
-The current branch includes the in-memory store, schemas, and REST API adapter. The server router wiring is kept as a separate task because server.ts is large and must be patched carefully.
+The current branch includes the in-memory store, schemas, GitHub CI event ingestion, and server router wiring through the existing AgentOps router.
