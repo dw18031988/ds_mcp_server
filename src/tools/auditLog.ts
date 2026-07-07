@@ -2,6 +2,8 @@ export type AuditAction =
   | "ds_submit_agent_result"
   | "github_create_branch"
   | "github_upsert_file"
+  | "github_push_file"
+  | "github_replace_in_file"
   | "github_apply_text_patch"
   | "github_push_file"
   | "github_replace_in_file"

@@ -18,6 +18,19 @@ import {
   updateTask
 } from "./taskStore.js";
 import { availableTaskTransitions } from "./taskMachine.js";
+import {
+  claimAsyncTaskSchema,
+  createAsyncWorkflowSchema,
+  githubCiEventSchema,
+  submitAsyncTaskResultSchema
+} from "../asyncWorkflowSchemas.js";
+import {
+  claimAsyncTask,
+  createAsyncWorkflow,
+  getAsyncWorkflow,
+  handleGithubCiEvent,
+  submitAsyncTaskResult
+} from "../asyncWorkflowStore.js";
 
 export type AgentOpsRouterDeps = {
   config: AppConfig;
@@ -37,6 +50,10 @@ function apiErrorStatus(error: Error): number {
   return 400;
 }
 
+function isAgentOpsPath(pathname: string): boolean {
+  return pathname.startsWith("/api/tasks") || pathname.startsWith("/api/workflows") || pathname.startsWith("/api/async-tasks") || pathname === "/api/webhooks/github";
+}
+
 export async function handleAgentOpsRestApi(
   req: IncomingMessage,
   res: ServerResponse,
@@ -45,11 +62,55 @@ export async function handleAgentOpsRestApi(
 ): Promise<boolean> {
   const { config, sendJson, setCorsHeaders, readJsonBody } = deps;
 
-  if (!url.pathname.startsWith("/api/tasks")) return false;
+  if (!isAgentOpsPath(url.pathname)) return false;
 
   setCorsHeaders(res);
 
   try {
+    if (req.method === "POST" && url.pathname === "/api/workflows") {
+      const body = createAsyncWorkflowSchema.parse(await readJsonBody(req));
+      const output = createAsyncWorkflow(body);
+      sendJson(res, 202, { ok: true, workflow: output.workflow, current_task: output.task });
+      return true;
+    }
+
+    const workflowMatch = url.pathname.match(/^\/api\/workflows\/([^/]+)$/);
+
+    if (req.method === "GET" && workflowMatch) {
+      const output = getAsyncWorkflow(decodePathValue(workflowMatch[1]));
+      if (!output) {
+        sendJson(res, 404, { error: "Workflow not found" });
+        return true;
+      }
+      sendJson(res, 200, { ok: true, ...output });
+      return true;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/async-tasks/claim") {
+      const body = claimAsyncTaskSchema.parse(await readJsonBody(req));
+      sendJson(res, 200, { ok: true, task: claimAsyncTask(body) ?? null });
+      return true;
+    }
+
+    const asyncResultMatch = url.pathname.match(/^\/api\/async-tasks\/([^/]+)\/result$/);
+
+    if (req.method === "POST" && asyncResultMatch) {
+      const body = submitAsyncTaskResultSchema.parse(await readJsonBody(req));
+      const output = submitAsyncTaskResult(decodePathValue(asyncResultMatch[1]), body);
+      if (!output) {
+        sendJson(res, 404, { error: "Task not found" });
+        return true;
+      }
+      sendJson(res, 200, { ok: true, ...output });
+      return true;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/webhooks/github") {
+      const body = githubCiEventSchema.parse(await readJsonBody(req));
+      sendJson(res, 200, { ok: true, ...handleGithubCiEvent(body) });
+      return true;
+    }
+
     if (req.method === "GET" && url.pathname === "/api/tasks") {
       sendJson(res, 200, { ok: true, tasks: await listTasks(config) });
       return true;
