@@ -18,8 +18,9 @@ import {
 } from "./tools/githubClient.js";
 import { registerGitHubFilePushTools } from "./tools/githubFilePushTools.js";
 import { writeAuditEvent } from "./tools/auditLog.js";
+import { registerAgentOpsMcpTools } from "./agentops/mcpTools.js";
 
-const serviceVersion = "0.5.0";
+const serviceVersion = "0.8.0";
 
 type TextContent = { type: "text"; text: string };
 type ToolTextResult = {
@@ -258,6 +259,7 @@ export function createMcpServer(config: AppConfig): McpServer {
   );
 
   registerGitHubFilePushTools(server, config);
+  registerAgentOpsMcpTools(server, config);
 
   server.registerTool(
     "github_create_pr",
