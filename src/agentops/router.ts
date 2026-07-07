@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { ZodError } from "zod";
+import { z, ZodError } from "zod";
 import type { AppConfig } from "../config.js";
 import {
   createTaskLinkSchema,
@@ -31,6 +31,9 @@ import {
   handleGithubCiEvent,
   submitAsyncTaskResult
 } from "../asyncWorkflowStore.js";
+import { getOrchestrationDashboardSnapshot } from "../dashboard/orchestrationDashboard.js";
+import { listAgents, recordAgentHeartbeat, registerAgent } from "../agents/agentRegistry.js";
+import { runSchedulerTick } from "../scheduler/orchestrationScheduler.js";
 
 export type AgentOpsRouterDeps = {
   config: AppConfig;
@@ -38,6 +41,26 @@ export type AgentOpsRouterDeps = {
   setCorsHeaders: (res: ServerResponse) => void;
   readJsonBody: (req: IncomingMessage) => Promise<unknown>;
 };
+
+const registerAgentSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  version: z.string().optional(),
+  capabilities: z.array(z.string()).default([]),
+  metadata_json: z.record(z.unknown()).default({})
+});
+
+const heartbeatSchema = z.object({
+  status: z.string().min(1).default("available"),
+  current_task_id: z.string().optional(),
+  current_lease_id: z.string().optional(),
+  queue_depth: z.number().int().nonnegative().optional(),
+  payload_json: z.record(z.unknown()).default({})
+});
+
+const schedulerTickSchema = z.object({
+  scheduler_id: z.string().min(1).default("default")
+});
 
 function decodePathValue(value: string | undefined): string {
   return decodeURIComponent(value ?? "");
@@ -51,7 +74,26 @@ function apiErrorStatus(error: Error): number {
 }
 
 function isAgentOpsPath(pathname: string): boolean {
-  return pathname.startsWith("/api/tasks") || pathname.startsWith("/api/workflows") || pathname.startsWith("/api/async-tasks") || pathname === "/api/webhooks/github";
+  return pathname.startsWith("/api/tasks") ||
+    pathname.startsWith("/api/workflows") ||
+    pathname.startsWith("/api/async-tasks") ||
+    pathname.startsWith("/api/dashboard") ||
+    pathname.startsWith("/api/agents") ||
+    pathname.startsWith("/api/scheduler") ||
+    pathname === "/api/webhooks/github";
+}
+
+function dashboardSection(snapshot: Awaited<ReturnType<typeof getOrchestrationDashboardSnapshot>>, pathname: string): unknown {
+  if (pathname === "/api/dashboard/orchestration") return snapshot;
+  if (pathname === "/api/dashboard/workflows") return { ok: true, workflows: snapshot.workflows };
+  if (pathname === "/api/dashboard/tasks") return { ok: true, tasks: snapshot.task_queue };
+  if (pathname === "/api/dashboard/agents/running") return { ok: true, agents: snapshot.running_agents };
+  if (pathname === "/api/dashboard/waiting") return { ok: true, waiting: snapshot.waiting };
+  if (pathname === "/api/dashboard/failed-tasks") return { ok: true, failed_tasks: snapshot.failed_tasks };
+  if (pathname === "/api/dashboard/dead-letter-tasks") return { ok: true, dead_letter_tasks: snapshot.dead_letter_tasks };
+  if (pathname === "/api/dashboard/upstream-calls") return { ok: true, webhook_deliveries: snapshot.webhook_deliveries };
+  if (pathname === "/api/dashboard/events") return { ok: true, events: snapshot.events };
+  return undefined;
 }
 
 export async function handleAgentOpsRestApi(
@@ -67,9 +109,49 @@ export async function handleAgentOpsRestApi(
   setCorsHeaders(res);
 
   try {
+    if (req.method === "GET" && url.pathname.startsWith("/api/dashboard/")) {
+      const limit = Number(url.searchParams.get("limit") || 50);
+      const snapshot = await getOrchestrationDashboardSnapshot(config, Number.isFinite(limit) ? limit : 50);
+      const section = dashboardSection(snapshot, url.pathname);
+      if (!section) {
+        sendJson(res, 404, { error: "Dashboard route not found" });
+        return true;
+      }
+      sendJson(res, 200, section);
+      return true;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/agents") {
+      sendJson(res, 200, { ok: true, agents: await listAgents(config) });
+      return true;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/agents/register") {
+      const body = registerAgentSchema.parse(await readJsonBody(req));
+      sendJson(res, 201, { ok: true, agent: await registerAgent(config, body) });
+      return true;
+    }
+
+    const heartbeatMatch = url.pathname.match(/^\/api\/agents\/([^/]+)\/heartbeat$/);
+
+    if (req.method === "POST" && heartbeatMatch) {
+      const body = heartbeatSchema.parse(await readJsonBody(req));
+      const agentId = decodePathValue(heartbeatMatch[1]);
+      sendJson(res, 200, {
+        ...(await recordAgentHeartbeat(config, { agent_id: agentId, ...body }))
+      });
+      return true;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/scheduler/tick") {
+      const body = schedulerTickSchema.parse(await readJsonBody(req));
+      sendJson(res, 200, await runSchedulerTick(config, body.scheduler_id));
+      return true;
+    }
+
     if (req.method === "POST" && url.pathname === "/api/workflows") {
       const body = createAsyncWorkflowSchema.parse(await readJsonBody(req));
-      const output = createAsyncWorkflow(body);
+      const output = await createAsyncWorkflow(config, body);
       sendJson(res, 202, { ok: true, workflow: output.workflow, current_task: output.task });
       return true;
     }
@@ -77,7 +159,7 @@ export async function handleAgentOpsRestApi(
     const workflowMatch = url.pathname.match(/^\/api\/workflows\/([^/]+)$/);
 
     if (req.method === "GET" && workflowMatch) {
-      const output = getAsyncWorkflow(decodePathValue(workflowMatch[1]));
+      const output = await getAsyncWorkflow(config, decodePathValue(workflowMatch[1]));
       if (!output) {
         sendJson(res, 404, { error: "Workflow not found" });
         return true;
@@ -88,7 +170,7 @@ export async function handleAgentOpsRestApi(
 
     if (req.method === "POST" && url.pathname === "/api/async-tasks/claim") {
       const body = claimAsyncTaskSchema.parse(await readJsonBody(req));
-      sendJson(res, 200, { ok: true, task: claimAsyncTask(body) ?? null });
+      sendJson(res, 200, { ok: true, task: await claimAsyncTask(config, body) ?? null });
       return true;
     }
 
@@ -96,7 +178,7 @@ export async function handleAgentOpsRestApi(
 
     if (req.method === "POST" && asyncResultMatch) {
       const body = submitAsyncTaskResultSchema.parse(await readJsonBody(req));
-      const output = submitAsyncTaskResult(decodePathValue(asyncResultMatch[1]), body);
+      const output = await submitAsyncTaskResult(config, decodePathValue(asyncResultMatch[1]), body);
       if (!output) {
         sendJson(res, 404, { error: "Task not found" });
         return true;
@@ -107,7 +189,7 @@ export async function handleAgentOpsRestApi(
 
     if (req.method === "POST" && url.pathname === "/api/webhooks/github") {
       const body = githubCiEventSchema.parse(await readJsonBody(req));
-      sendJson(res, 200, { ok: true, ...handleGithubCiEvent(body) });
+      sendJson(res, 200, { ok: true, ...(await handleGithubCiEvent(config, body)) });
       return true;
     }
 

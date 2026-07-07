@@ -66,6 +66,17 @@ export async function getTask(config: AppConfig, taskId: string): Promise<TaskRe
 
 export async function createTask(config: AppConfig, input: CreateTaskInput): Promise<TaskRecord> {
   const supabase = getSupabaseClient(config);
+
+  if (input.idempotency_key) {
+    const { data: existing, error: existingError } = await supabase
+      .from(TASKS_TABLE)
+      .select("*")
+      .eq("idempotency_key", input.idempotency_key)
+      .maybeSingle();
+    if (existingError) throw new Error(`Failed to check existing task: ${existingError.message}`);
+    if (existing) return existing as TaskRecord;
+  }
+
   const timestamp = now();
   const id = createId("task");
   const record = {
@@ -88,6 +99,7 @@ export async function createTask(config: AppConfig, input: CreateTaskInput): Pro
     repo_branch: input.repo_branch ?? null,
     pr_number: null,
     pr_url: null,
+    idempotency_key: input.idempotency_key ?? null,
     created_at: timestamp,
     updated_at: timestamp,
     completed_at: null
@@ -100,6 +112,7 @@ export async function createTask(config: AppConfig, input: CreateTaskInput): Pro
     task_id: id,
     event_type: "task_created",
     actor: "user",
+    idempotency_key: input.idempotency_key,
     payload: { title: input.title }
   });
 
@@ -130,6 +143,7 @@ export async function updateTask(
     task_id: taskId,
     event_type: "task_updated",
     actor: "user",
+    idempotency_key: input.idempotency_key,
     payload: input
   });
 
@@ -155,6 +169,18 @@ export async function createTaskLink(
   input: CreateTaskLinkInput
 ): Promise<TaskLinkRecord> {
   const supabase = getSupabaseClient(config);
+
+  const { data: existing, error: existingError } = await supabase
+    .from(LINKS_TABLE)
+    .select("*")
+    .eq("from_task_id", fromTaskId)
+    .eq("to_task_id", input.to_task_id)
+    .eq("link_type", input.link_type)
+    .eq("status", "active")
+    .maybeSingle();
+  if (existingError) throw new Error(`Failed to check existing task link: ${existingError.message}`);
+  if (existing) return existing as TaskLinkRecord;
+
   const link = {
     id: createId("tlink"),
     from_task_id: fromTaskId,
@@ -173,6 +199,7 @@ export async function createTaskLink(
     event_type: "link_created",
     actor: "user",
     actor_id: input.created_by,
+    idempotency_key: input.idempotency_key,
     payload: link
   });
 
@@ -217,7 +244,31 @@ export async function transitionTask(
   config: AppConfig,
   taskId: string,
   input: TransitionTaskInput
-): Promise<{ task: TaskRecord; from_state: TaskState; to_state: TaskState; available_transitions: string[] }> {
+): Promise<{ task: TaskRecord; from_state: TaskState; to_state: TaskState; available_transitions: string[]; idempotent_replay?: boolean }> {
+  const supabase = getSupabaseClient(config);
+
+  if (input.idempotency_key) {
+    const { data: existingEvent, error: existingEventError } = await supabase
+      .from(EVENTS_TABLE)
+      .select("*")
+      .eq("task_id", taskId)
+      .eq("idempotency_key", input.idempotency_key)
+      .maybeSingle();
+    if (existingEventError) throw new Error(`Failed to check existing task event: ${existingEventError.message}`);
+    if (existingEvent) {
+      const currentTask = await getTask(config, taskId);
+      if (!currentTask) throw new Error("Task not found");
+      const event = existingEvent as TaskEventRecord;
+      return {
+        task: currentTask,
+        from_state: event.from_state ?? currentTask.state,
+        to_state: event.to_state ?? currentTask.state,
+        available_transitions: availableTaskTransitions(currentTask.state),
+        idempotent_replay: true
+      };
+    }
+  }
+
   const task = await getTask(config, taskId);
   if (!task) throw new Error("Task not found");
 
@@ -230,7 +281,6 @@ export async function transitionTask(
     throw new Error(`Invalid transition ${input.transition} from ${task.state}`);
   }
 
-  const supabase = getSupabaseClient(config);
   const updates = {
     state: toState,
     updated_at: now(),
@@ -241,10 +291,16 @@ export async function transitionTask(
     .from(TASKS_TABLE)
     .update(updates)
     .eq("id", taskId)
-    .select("*")
-    .single();
+    .eq("state", task.state)
+    .select("*");
 
   if (error) throw new Error(`Failed to transition task: ${error.message}`);
+  const updatedTask = (data ?? [])[0] as TaskRecord | undefined;
+  if (!updatedTask) {
+    const currentTask = await getTask(config, taskId);
+    if (!currentTask) throw new Error("Task not found");
+    throw new Error(`Task state changed from ${task.state} to ${currentTask.state}; refresh before retry`);
+  }
 
   await writeTaskEvent(config, {
     task_id: taskId,
@@ -253,6 +309,7 @@ export async function transitionTask(
     to_state: toState,
     actor: input.actor,
     actor_id: input.actor_id,
+    idempotency_key: input.idempotency_key,
     payload: {
       transition: input.transition,
       note: input.note,
@@ -261,7 +318,7 @@ export async function transitionTask(
   });
 
   return {
-    task: data as TaskRecord,
+    task: updatedTask,
     from_state: task.state,
     to_state: toState,
     available_transitions: availableTaskTransitions(toState)
