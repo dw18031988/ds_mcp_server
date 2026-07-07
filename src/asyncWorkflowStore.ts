@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import type { AppConfig } from "./config.js";
 import { isSupabaseConfigured } from "./db/supabaseClient.js";
 import {
-  appendTaskEvent as appendPersistentTaskEvent,
   claimNextTaskRecord,
   createTaskRecord,
   createWorkflowRecord,
@@ -10,9 +9,9 @@ import {
   getWorkflowRecord,
   markWebhookDeliveryProcessed,
   recordWebhookDelivery,
-  updateTaskResultRecord,
-  updateWorkflowStatus
+  updateTaskResultRecord
 } from "./repositories/orchestrationRepository.js";
+import { applyTaskResultTransition } from "./state/stateEngine.js";
 
 export type AsyncWorkflowStatus = "running" | "waiting" | "succeeded" | "failed" | "cancelled";
 export type AsyncTaskStatus = "queued" | "leased" | "running" | "waiting_external" | "succeeded" | "failed" | "cancelled" | "dead_letter";
@@ -212,41 +211,7 @@ export async function submitAsyncTaskResult(
   if (isSupabaseConfigured(config)) {
     const task = await updateTaskResultRecord(config, taskId, input);
     if (!task) return undefined;
-
-    if (input.status === "failed") {
-      await updateWorkflowStatus(config, task.workflow_id, "failed", task.id);
-      return { task };
-    }
-
-    if (task.type === "final_report") {
-      await updateWorkflowStatus(config, task.workflow_id, "succeeded", undefined);
-      await appendPersistentTaskEvent(config, {
-        workflow_id: task.workflow_id,
-        task_id: task.id,
-        event_type: "workflow_succeeded",
-        actor: "state_engine",
-        data_json: {}
-      });
-      return { task };
-    }
-
-    const next = nextTaskType(task, task.result_json ?? {});
-    if (!next) return { task };
-
-    const nextTask = await createTaskRecord(config, {
-      workflow_id: task.workflow_id,
-      parent_task_id: task.id,
-      type: next,
-      status: next === "wait_github_ci" ? "waiting_external" : "queued",
-      payload_json: task.result_json ?? {},
-      wait_key: String(task.result_json?.head_sha ?? task.result_json?.pr_number ?? "") || undefined
-    });
-
-    if (next === "wait_github_ci") {
-      await updateWorkflowStatus(config, task.workflow_id, "waiting", nextTask.id);
-    }
-
-    return { task, next_task: nextTask };
+    return applyTaskResultTransition(config, task, input);
   }
 
   const task = tasks.get(taskId);
