@@ -22,7 +22,8 @@ export const createTaskSchema = z.object({
   owner_user_id: z.string().optional(),
   repo_owner: z.string().optional(),
   repo_name: z.string().optional(),
-  repo_branch: z.string().optional()
+  repo_branch: z.string().optional(),
+  idempotency_key: z.string().min(1).max(200).optional()
 });
 
 export const updateTaskSchema = createTaskSchema.partial().omit({ parent_task_id: true });
@@ -39,7 +40,8 @@ export const createTaskLinkSchema = z.object({
     "implements",
     "validates"
   ]),
-  created_by: z.string().optional()
+  created_by: z.string().optional(),
+  idempotency_key: z.string().min(1).max(200).optional()
 });
 
 export const transitionTaskSchema = z.object({
@@ -62,7 +64,8 @@ export const transitionTaskSchema = z.object({
   actor: z.enum(["user", "agent", "system"]).default("user"),
   actor_id: z.string().optional(),
   note: z.string().optional(),
-  payload: z.record(z.unknown()).optional()
+  payload: z.record(z.unknown()).optional(),
+  idempotency_key: z.string().min(1).max(200).optional()
 });
 
 export type CreateTaskInput = z.infer<typeof createTaskSchema>;
