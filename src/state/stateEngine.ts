@@ -1,0 +1,111 @@
+import type { AppConfig } from "../config.js";
+import type { AsyncTask, AsyncTaskType } from "../asyncWorkflowStore.js";
+import {
+  appendTaskEvent,
+  createTaskRecord,
+  updateWorkflowStatus
+} from "../repositories/orchestrationRepository.js";
+
+export type TaskResultInput = {
+  status: "succeeded" | "failed";
+  summary?: string;
+  artifacts?: Record<string, unknown>;
+  error?: Record<string, unknown>;
+};
+
+export type StateEngineTransitionResult = {
+  task: AsyncTask;
+  next_task?: AsyncTask;
+};
+
+export function evaluateNextTaskType(
+  task: AsyncTask,
+  result: Record<string, unknown>
+): AsyncTaskType | undefined {
+  if (task.status === "failed") return undefined;
+  if (task.type === "analyze_repo") return "plan_changes";
+  if (task.type === "plan_changes") return "modify_code";
+  if (task.type === "modify_code") return "create_pr";
+  if (task.type === "create_pr") return "wait_github_ci";
+  if (task.type === "wait_github_ci") return result.conclusion === "failure" ? "fix_ci" : "final_report";
+  if (task.type === "fix_ci") return "wait_github_ci";
+  return undefined;
+}
+
+export async function applyTaskResultTransition(
+  config: AppConfig,
+  task: AsyncTask,
+  input: TaskResultInput
+): Promise<StateEngineTransitionResult> {
+  await appendTaskEvent(config, {
+    workflow_id: task.workflow_id,
+    task_id: task.id,
+    event_type: "state_engine_transition_started",
+    actor: "state_engine",
+    data_json: {
+      task_type: task.type,
+      task_status: input.status
+    }
+  });
+
+  if (input.status === "failed") {
+    await updateWorkflowStatus(config, task.workflow_id, "failed", task.id);
+    await appendTaskEvent(config, {
+      workflow_id: task.workflow_id,
+      task_id: task.id,
+      event_type: "workflow_failed",
+      actor: "state_engine",
+      data_json: { reason: "task_failed" }
+    });
+    return { task };
+  }
+
+  if (task.type === "final_report") {
+    await updateWorkflowStatus(config, task.workflow_id, "succeeded", undefined);
+    await appendTaskEvent(config, {
+      workflow_id: task.workflow_id,
+      task_id: task.id,
+      event_type: "workflow_succeeded",
+      actor: "state_engine",
+      data_json: {}
+    });
+    return { task };
+  }
+
+  const result = task.result_json ?? {};
+  const next = evaluateNextTaskType(task, result);
+  if (!next) {
+    await appendTaskEvent(config, {
+      workflow_id: task.workflow_id,
+      task_id: task.id,
+      event_type: "state_engine_no_next_task",
+      actor: "state_engine",
+      data_json: { task_type: task.type }
+    });
+    return { task };
+  }
+
+  const nextTask = await createTaskRecord(config, {
+    workflow_id: task.workflow_id,
+    parent_task_id: task.id,
+    type: next,
+    status: next === "wait_github_ci" ? "waiting_external" : "queued",
+    payload_json: result,
+    wait_key: String(result.head_sha ?? result.pr_number ?? "") || undefined
+  });
+
+  await updateWorkflowStatus(config, task.workflow_id, next === "wait_github_ci" ? "waiting" : "running", nextTask.id);
+  await appendTaskEvent(config, {
+    workflow_id: task.workflow_id,
+    task_id: nextTask.id,
+    event_type: "state_engine_next_task_created",
+    actor: "state_engine",
+    data_json: {
+      previous_task_id: task.id,
+      previous_task_type: task.type,
+      next_task_type: next
+    }
+  });
+
+  return { task, next_task: nextTask };
+}
