@@ -26,6 +26,21 @@ Out of scope for this phase:
 - Human approval UI
 - Memory retrieval/ranking
 
+## Implemented files
+
+- `supabase/migrations/0001_orchestration_core.sql`
+- `src/db/supabaseClient.ts`
+- `src/repositories/orchestrationRepository.ts`
+- `src/asyncWorkflowStore.ts`
+- `src/agentops/router.ts`
+- `src/agentops/supabaseClient.ts`
+
+## Runtime behavior
+
+When `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are configured, async workflow routes use Supabase-backed persistence.
+
+When Supabase is not configured, the async workflow routes fall back to the previous in-memory store. This preserves local MVP behavior and avoids breaking development environments that have not yet been migrated.
+
 ## Required tables
 
 ### workflows
@@ -34,10 +49,14 @@ Stores one workflow instance.
 
 Required columns:
 
-- `id uuid primary key`
+- `id text primary key`
 - `workflow_type text not null`
+- `name text not null`
+- `source text not null`
 - `status text not null`
 - `current_state text not null`
+- `current_task_id text`
+- `context_json jsonb not null default '{}'::jsonb`
 - `input_json jsonb not null default '{}'::jsonb`
 - `output_json jsonb`
 - `metadata_json jsonb not null default '{}'::jsonb`
@@ -50,19 +69,27 @@ Stores queueable work items.
 
 Required columns:
 
-- `id uuid primary key`
-- `workflow_id uuid references workflows(id)`
+- `id text primary key`
+- `workflow_id text references workflows(id)`
+- `parent_task_id text references tasks(id)`
 - `type text not null`
 - `status text not null`
 - `priority int not null default 100`
 - `payload_json jsonb not null default '{}'::jsonb`
 - `result_json jsonb`
 - `error_json jsonb`
+- `lease_owner text`
+- `lease_token text`
+- `lease_expires_at timestamptz`
+- `wait_key text`
 - `run_after timestamptz not null default now()`
+- `retry_count int not null default 0`
 - `attempts int not null default 0`
+- `max_retries int not null default 3`
 - `max_attempts int not null default 3`
 - `created_at timestamptz not null default now()`
 - `updated_at timestamptz not null default now()`
+- `completed_at timestamptz`
 
 ### task_events
 
@@ -70,12 +97,14 @@ Append-only workflow/task event store.
 
 Required columns:
 
-- `id uuid primary key`
-- `workflow_id uuid references workflows(id)`
-- `task_id uuid references tasks(id)`
+- `id text primary key`
+- `workflow_id text references workflows(id)`
+- `task_id text references tasks(id)`
 - `event_type text not null`
+- `actor text`
 - `actor_type text`
 - `actor_id text`
+- `data_json jsonb not null default '{}'::jsonb`
 - `payload_json jsonb not null default '{}'::jsonb`
 - `created_at timestamptz not null default now()`
 
@@ -85,8 +114,8 @@ Tracks agent claims and lease expiration.
 
 Required columns:
 
-- `id uuid primary key`
-- `task_id uuid not null references tasks(id)`
+- `id text primary key`
+- `task_id text not null references tasks(id)`
 - `agent_id text not null`
 - `lease_token text not null unique`
 - `status text not null`
@@ -111,7 +140,7 @@ Stores inbound GitHub or external webhook delivery attempts.
 
 Required columns:
 
-- `id uuid primary key`
+- `id text primary key`
 - `provider text not null`
 - `delivery_id text not null`
 - `event_type text not null`
@@ -131,9 +160,9 @@ Stores tasks that cannot be retried safely.
 
 Required columns:
 
-- `id uuid primary key`
-- `original_task_id uuid`
-- `workflow_id uuid`
+- `id text primary key`
+- `original_task_id text`
+- `workflow_id text`
 - `type text not null`
 - `payload_json jsonb not null default '{}'::jsonb`
 - `error_json jsonb`
@@ -141,11 +170,14 @@ Required columns:
 
 ## Repository layer
 
-Add DB access behind interfaces instead of calling Supabase directly from route handlers.
+DB access is isolated behind repository functions instead of direct Supabase calls from route handlers.
 
-Suggested files:
+Current implementation:
 
-- `src/db/supabaseClient.ts`
+- `src/repositories/orchestrationRepository.ts`
+
+Future split if the module grows:
+
 - `src/repositories/workflowRepository.ts`
 - `src/repositories/taskRepository.ts`
 - `src/repositories/taskEventRepository.ts`
@@ -156,49 +188,31 @@ Suggested files:
 
 ## Core operations
 
-Minimum operations required before merging Phase 2:
+Implemented or scaffolded by the repository/store layer:
 
-- `createWorkflow(input)`
-- `getWorkflow(id)`
-- `updateWorkflowState(id, nextState, status)`
-- `createTask(input)`
-- `getTask(id)`
-- `claimNextTask(agentId, capabilities, leaseSeconds)`
-- `completeTask(taskId, leaseToken, result)`
-- `failTask(taskId, leaseToken, error)`
+- `createWorkflowRecord(input)`
+- `getWorkflowRecord(id)`
+- `updateWorkflowStatus(id, status)`
+- `createTaskRecord(input)`
+- `claimNextTaskRecord(agentId, capabilities, leaseSeconds)`
+- `updateTaskResultRecord(taskId, result)`
 - `appendTaskEvent(event)`
 - `recordWebhookDelivery(delivery)`
-- `markWebhookProcessed(provider, deliveryId)`
-- `moveTaskToDeadLetter(taskId, error)`
+- `markWebhookDeliveryProcessed(provider, deliveryId)`
+- `dead_letter_tasks` insert on terminal failure
 
 ## Claim safety
 
-The claim operation must be atomic. Two agents must not receive the same task.
+The claim operation is persistence-backed. It selects eligible queued or expired leased tasks, attempts a guarded update, creates a `task_leases` row, and emits a `task_claimed` event.
 
-Recommended approach:
-
-1. Select eligible task with `status = 'queued'` and `run_after <= now()`.
-2. Use transaction or RPC function with `FOR UPDATE SKIP LOCKED`.
-3. Update task status to `leased`.
-4. Insert `task_leases` row with unique `lease_token`.
-5. Emit `task_events.task_leased`.
-
-## Migration path
-
-1. Add migration for all Phase 2 tables.
-2. Add Supabase client and repository modules.
-3. Keep public REST/MCP contracts stable.
-4. Replace in-memory stores behind the existing functions.
-5. Add fallback error messages when Supabase is not configured.
-6. Add tests or typecheck coverage for repository inputs and outputs.
+A future hardening step should move the claim operation into a Postgres RPC function with `FOR UPDATE SKIP LOCKED` for stronger concurrency guarantees under high parallel load.
 
 ## Acceptance criteria
 
-- Server restart does not lose workflows, tasks, agent runs, webhook deliveries, upstream calls, or task history.
-- Multiple agents cannot claim the same task.
-- Task result submission requires a valid lease token when the task was leased.
-- Every task state change emits one `task_events` row.
-- Webhook delivery IDs are idempotent.
+- Server restart does not lose workflows, tasks, task events, leases, webhook deliveries, or dead-letter records when Supabase is configured.
+- Async workflow APIs remain usable without Supabase through in-memory fallback.
+- Multiple agents are guarded from claiming the same task through conditional update and lease records.
+- Webhook delivery IDs are idempotent through unique `(provider, delivery_id)`.
 - Failed terminal tasks are recorded in `dead_letter_tasks`.
 - Existing MCP and REST API behavior remains backward compatible.
 - `npm run typecheck` passes.
