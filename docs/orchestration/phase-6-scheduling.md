@@ -14,19 +14,22 @@ This removes reliance on ad hoc polling logic scattered across route handlers.
 - Exponential backoff after failure
 - Timeout detection for long-running tasks
 - Lease expiration and requeue
+- Scheduler lock to avoid overlapping ticks
 - Scheduler event emission
+- Scheduler run history
 
-## Recommended tables
+## Tables
 
-Future tables after Phase 2:
+Implemented after Phase 2:
 
 - `cron_schedules`
 - `retry_policies`
 - `scheduler_runs`
+- `task_locks`
 
 ### cron_schedules
 
-- `id uuid primary key`
+- `id text primary key`
 - `workflow_type text not null`
 - `cron_expression text not null`
 - `timezone text not null default 'UTC'`
@@ -38,7 +41,7 @@ Future tables after Phase 2:
 
 ### retry_policies
 
-- `id uuid primary key`
+- `id text primary key`
 - `task_type text not null unique`
 - `max_attempts int not null default 3`
 - `base_delay_seconds int not null default 30`
@@ -47,7 +50,7 @@ Future tables after Phase 2:
 
 ### scheduler_runs
 
-- `id uuid primary key`
+- `id text primary key`
 - `scheduler_id text not null`
 - `started_at timestamptz not null default now()`
 - `completed_at timestamptz`
@@ -58,21 +61,42 @@ Future tables after Phase 2:
 
 Each scheduler tick should:
 
-1. Acquire scheduler lock.
-2. Detect expired leases.
-3. Requeue eligible tasks or move terminal failures to dead letter.
-4. Create due cron tasks.
-5. Emit events for every action.
-6. Release scheduler lock.
+1. Acquire scheduler lock via `task_locks`.
+2. Mark stale agents.
+3. Detect expired leases.
+4. Requeue eligible tasks or move terminal failures to dead letter.
+5. Create due cron tasks.
+6. Emit events for every action.
+7. Record scheduler run summary.
+8. Release scheduler lock.
 
 ## Retry behavior
 
 On task failure:
 
-- Increment `attempts`.
-- If attempts remain, set status to `queued` and compute next `run_after`.
+- Increment `attempts` / `retry_count`.
+- Load retry policy for task type.
+- If attempts remain, set status to `queued` and compute next `run_after` using exponential backoff.
 - If attempts are exhausted, move task to `dead_letter_tasks`.
 - Emit retry or dead-letter event.
+
+## API endpoints
+
+- `POST /api/scheduler/tick`
+- `GET /api/scheduler/runs`
+- `GET /api/scheduler/cron-schedules`
+- `POST /api/scheduler/cron-schedules`
+- `GET /api/scheduler/retry-policies`
+- `POST /api/scheduler/retry-policies`
+
+## MCP tools
+
+- `scheduler_tick`
+- `scheduler_runs_list`
+- `cron_schedules_list`
+- `cron_schedule_upsert`
+- `retry_policies_list`
+- `retry_policy_upsert`
 
 ## Acceptance criteria
 
@@ -82,3 +106,5 @@ On task failure:
 - Exhausted retries are moved to dead letter.
 - Cron schedules do not create duplicate tasks for the same run window.
 - Scheduler actions are auditable through events.
+- Scheduler run status is visible in dashboard/API.
+- Overlapping scheduler ticks are skipped when lock is held.
