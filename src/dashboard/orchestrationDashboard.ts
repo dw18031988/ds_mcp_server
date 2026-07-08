@@ -1,21 +1,29 @@
 import type { AppConfig } from "../config.js";
 import { getSupabaseClient, isSupabaseConfigured } from "../db/supabaseClient.js";
+import { listAgentHealth } from "../agents/agentRegistry.js";
+import { listCronSchedules, listRetryPolicies, listSchedulerRuns } from "../scheduler/orchestrationScheduler.js";
 
 export type OrchestrationDashboardSummary = {
   counts: {
     workflows: number;
     queued_tasks: number;
     running_agents: number;
+    online_agents: number;
+    stale_agents: number;
     waiting: number;
     failed_tasks: number;
     dead_letter_tasks: number;
     webhook_deliveries: number;
+    cron_schedules: number;
+    retry_policies: number;
+    scheduler_runs: number;
     events: number;
   };
   attention: {
     waiting: number;
     failed_tasks: number;
     dead_letter_tasks: number;
+    stale_agents: number;
     needs_attention: number;
   };
   oldest: {
@@ -34,10 +42,14 @@ export type OrchestrationDashboardSnapshot = {
   workflows: unknown[];
   task_queue: unknown[];
   running_agents: unknown[];
+  agent_health: unknown[];
   waiting: unknown[];
   failed_tasks: unknown[];
   dead_letter_tasks: unknown[];
   webhook_deliveries: unknown[];
+  cron_schedules: unknown[];
+  retry_policies: unknown[];
+  scheduler_runs: unknown[];
   events: unknown[];
 };
 
@@ -51,6 +63,11 @@ function fieldString(row: unknown, field: string): string | undefined {
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
+function fieldValue(row: unknown, field: string): unknown {
+  if (!row || typeof row !== "object") return undefined;
+  return (row as Record<string, unknown>)[field];
+}
+
 function oldestTimestamp(rows: unknown[], field: string): string | undefined {
   return rows
     .map((row) => fieldString(row, field))
@@ -58,33 +75,48 @@ function oldestTimestamp(rows: unknown[], field: string): string | undefined {
     .sort((a, b) => a.localeCompare(b))[0];
 }
 
+function countFreshness(rows: unknown[], freshness: string): number {
+  return rows.filter((row) => fieldValue(row, "freshness") === freshness).length;
+}
+
 function createSummary(input: {
   workflows: unknown[];
   taskQueue: unknown[];
   runningAgents: unknown[];
+  agentHealth: unknown[];
   waiting: unknown[];
   failedTasks: unknown[];
   deadLetters: unknown[];
   webhooks: unknown[];
+  cronSchedules: unknown[];
+  retryPolicies: unknown[];
+  schedulerRuns: unknown[];
   events: unknown[];
 }): OrchestrationDashboardSummary {
-  const needsAttention = input.waiting.length + input.failedTasks.length + input.deadLetters.length;
+  const staleAgents = countFreshness(input.agentHealth, "stale") + countFreshness(input.agentHealth, "offline");
+  const needsAttention = input.waiting.length + input.failedTasks.length + input.deadLetters.length + staleAgents;
 
   return {
     counts: {
       workflows: input.workflows.length,
       queued_tasks: input.taskQueue.length,
       running_agents: input.runningAgents.length,
+      online_agents: countFreshness(input.agentHealth, "online"),
+      stale_agents: staleAgents,
       waiting: input.waiting.length,
       failed_tasks: input.failedTasks.length,
       dead_letter_tasks: input.deadLetters.length,
       webhook_deliveries: input.webhooks.length,
+      cron_schedules: input.cronSchedules.length,
+      retry_policies: input.retryPolicies.length,
+      scheduler_runs: input.schedulerRuns.length,
       events: input.events.length
     },
     attention: {
       waiting: input.waiting.length,
       failed_tasks: input.failedTasks.length,
       dead_letter_tasks: input.deadLetters.length,
+      stale_agents: staleAgents,
       needs_attention: needsAttention
     },
     oldest: {
@@ -101,10 +133,14 @@ function emptySummary(): OrchestrationDashboardSummary {
     workflows: [],
     taskQueue: [],
     runningAgents: [],
+    agentHealth: [],
     waiting: [],
     failedTasks: [],
     deadLetters: [],
     webhooks: [],
+    cronSchedules: [],
+    retryPolicies: [],
+    schedulerRuns: [],
     events: []
   });
 }
@@ -128,18 +164,41 @@ export async function getOrchestrationDashboardSnapshot(
   limit = 50
 ): Promise<OrchestrationDashboardSnapshot> {
   if (!isSupabaseConfigured(config)) {
+    const [agentHealth, cronSchedules, retryPolicies, schedulerRuns] = await Promise.all([
+      listAgentHealth(config),
+      listCronSchedules(config, limit),
+      listRetryPolicies(config, limit),
+      listSchedulerRuns(config, limit)
+    ]);
     return {
       ok: true,
       generated_at: now(),
       supabase_configured: false,
-      summary: emptySummary(),
+      summary: createSummary({
+        workflows: [],
+        taskQueue: [],
+        runningAgents: [],
+        agentHealth,
+        waiting: [],
+        failedTasks: [],
+        deadLetters: [],
+        webhooks: [],
+        cronSchedules,
+        retryPolicies,
+        schedulerRuns,
+        events: []
+      }),
       workflows: [],
       task_queue: [],
       running_agents: [],
+      agent_health: agentHealth,
       waiting: [],
       failed_tasks: [],
       dead_letter_tasks: [],
       webhook_deliveries: [],
+      cron_schedules: cronSchedules,
+      retry_policies: retryPolicies,
+      scheduler_runs: schedulerRuns,
       events: []
     };
   }
@@ -164,6 +223,13 @@ export async function getOrchestrationDashboardSnapshot(
     runningAgents = data ?? leases;
   }
 
+  const [agentHealth, cronSchedules, retryPolicies, schedulerRuns] = await Promise.all([
+    listAgentHealth(config),
+    listCronSchedules(config, limit),
+    listRetryPolicies(config, limit),
+    listSchedulerRuns(config, limit)
+  ]);
+
   return {
     ok: true,
     generated_at: now(),
@@ -172,19 +238,27 @@ export async function getOrchestrationDashboardSnapshot(
       workflows,
       taskQueue,
       runningAgents,
+      agentHealth,
       waiting,
       failedTasks,
       deadLetters,
       webhooks,
+      cronSchedules,
+      retryPolicies,
+      schedulerRuns,
       events
     }),
     workflows,
     task_queue: taskQueue,
     running_agents: runningAgents,
+    agent_health: agentHealth,
     waiting,
     failed_tasks: failedTasks,
     dead_letter_tasks: deadLetters,
     webhook_deliveries: webhooks,
+    cron_schedules: cronSchedules,
+    retry_policies: retryPolicies,
+    scheduler_runs: schedulerRuns,
     events
   };
 }
