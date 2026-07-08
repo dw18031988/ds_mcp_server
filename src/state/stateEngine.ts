@@ -3,6 +3,9 @@ import type { AsyncTask, AsyncTaskType } from "../asyncWorkflowStore.js";
 import {
   appendTaskEvent,
   createTaskRecord,
+  getRetryPolicyForTaskType,
+  moveTaskToDeadLetter,
+  scheduleTaskRetry,
   updateWorkflowStatus
 } from "../repositories/orchestrationRepository.js";
 
@@ -49,15 +52,39 @@ export async function applyTaskResultTransition(
   });
 
   if (input.status === "failed") {
-    await updateWorkflowStatus(config, task.workflow_id, "failed", task.id);
+    const policy = await getRetryPolicyForTaskType(config, task.type, task.max_retries);
+
+    if (task.retry_count < policy.max_attempts) {
+      const retryTask = await scheduleTaskRetry(config, task, policy);
+      await updateWorkflowStatus(config, task.workflow_id, "running", retryTask.id);
+      await appendTaskEvent(config, {
+        workflow_id: task.workflow_id,
+        task_id: task.id,
+        event_type: "workflow_retry_pending",
+        actor: "state_engine",
+        data_json: {
+          attempt: task.retry_count,
+          max_attempts: policy.max_attempts,
+          task_type: task.type
+        }
+      });
+      return { task: retryTask };
+    }
+
+    const deadLetterTask = await moveTaskToDeadLetter(config, task, "retry_attempts_exhausted", input.error);
+    await updateWorkflowStatus(config, task.workflow_id, "failed", deadLetterTask.id);
     await appendTaskEvent(config, {
       workflow_id: task.workflow_id,
       task_id: task.id,
       event_type: "workflow_failed",
       actor: "state_engine",
-      data_json: { reason: "task_failed" }
+      data_json: {
+        reason: "retry_attempts_exhausted",
+        attempt: task.retry_count,
+        max_attempts: policy.max_attempts
+      }
     });
-    return { task };
+    return { task: deadLetterTask };
   }
 
   if (task.type === "final_report") {

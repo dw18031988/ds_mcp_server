@@ -6,7 +6,7 @@ Introduce durable agent registration and runtime health so the scheduler can dis
 
 ## Agent data
 
-Recommended future tables:
+Implemented tables:
 
 - `agents`
 - `agent_capabilities`
@@ -33,14 +33,22 @@ Recommended future tables:
 
 ### agent_heartbeats
 
-- `id uuid primary key`
+- `id text primary key`
 - `agent_id text references agents(id)`
 - `status text not null`
-- `current_task_id uuid`
-- `current_lease_id uuid`
+- `current_task_id text`
+- `current_lease_id text`
 - `queue_depth int`
 - `payload_json jsonb not null default '{}'::jsonb`
 - `created_at timestamptz not null default now()`
+
+### agent_queue_stats
+
+- `agent_id text primary key references agents(id)`
+- `queue_depth int not null default 0`
+- `running_count int not null default 0`
+- `failed_count int not null default 0`
+- `updated_at timestamptz not null default now()`
 
 ## Runtime behavior
 
@@ -63,6 +71,31 @@ The scheduler can rank agents by:
 - last failure count
 - task priority
 
+## API endpoints
+
+- `GET /api/agents`
+- `GET /api/agents/health?stale_after_seconds=120`
+- `POST /api/agents/register`
+- `POST /api/agents/{agent_id}/heartbeat`
+- `GET /api/dashboard/agents/health`
+
+## MCP tools
+
+- `agent_list`
+- `agent_health`
+- `agent_register`
+- `agent_heartbeat`
+
+## Health states
+
+Agent health is derived from `last_seen_at`:
+
+- `online`: heartbeat age is less than or equal to `stale_after_seconds`.
+- `stale`: heartbeat age is greater than `stale_after_seconds` and less than or equal to three times that value.
+- `offline`: no heartbeat exists or heartbeat age exceeds the stale window.
+
+A scheduler tick marks agents as `stale` when `last_seen_at` is older than the configured operational threshold.
+
 ## Acceptance criteria
 
 - Agent identity is durable.
@@ -71,3 +104,4 @@ The scheduler can rank agents by:
 - The system can detect stale agents.
 - Task claim can filter by required capability.
 - Dashboard can show running agents and current lease ownership.
+- Dashboard can show agent health, queue depth, current task, and current lease.

@@ -14,9 +14,16 @@ import {
   githubCiEventSchema,
   submitAsyncTaskResultSchema
 } from "../asyncWorkflowSchemas.js";
-import { listAgents, recordAgentHeartbeat, registerAgent } from "../agents/agentRegistry.js";
+import { listAgentHealth, listAgents, recordAgentHeartbeat, registerAgent } from "../agents/agentRegistry.js";
 import { getOrchestrationDashboardSnapshot } from "../dashboard/orchestrationDashboard.js";
-import { runSchedulerTick } from "../scheduler/orchestrationScheduler.js";
+import {
+  listCronSchedules,
+  listRetryPolicies,
+  listSchedulerRuns,
+  runSchedulerTick,
+  upsertCronSchedule,
+  upsertRetryPolicy
+} from "../scheduler/orchestrationScheduler.js";
 import {
   createTask,
   createTaskLink,
@@ -62,6 +69,25 @@ const heartbeatSchema = z.object({
   current_lease_id: z.string().optional(),
   queue_depth: z.number().int().nonnegative().optional(),
   payload_json: z.record(z.unknown()).default({})
+});
+
+const cronScheduleSchema = z.object({
+  id: z.string().min(1).optional(),
+  workflow_type: z.string().min(1),
+  cron_expression: z.string().min(1),
+  timezone: z.string().min(1).default("UTC"),
+  payload_json: z.record(z.unknown()).default({}),
+  enabled: z.boolean().default(true),
+  next_run_at: z.string().min(1).optional()
+});
+
+const retryPolicySchema = z.object({
+  id: z.string().min(1).optional(),
+  task_type: z.string().min(1),
+  max_attempts: z.number().int().positive().max(20).default(3),
+  base_delay_seconds: z.number().int().nonnegative().max(86_400).default(30),
+  max_delay_seconds: z.number().int().positive().max(604_800).default(3600),
+  backoff_multiplier: z.number().positive().max(10).default(2)
 });
 
 export function registerAgentOpsMcpTools(server: McpServer, config: AppConfig): void {
@@ -223,6 +249,17 @@ export function registerAgentOpsMcpTools(server: McpServer, config: AppConfig): 
   );
 
   server.registerTool(
+    "agent_health",
+    {
+      title: "List agent health",
+      description: "List registered agents with heartbeat freshness and queue stats.",
+      inputSchema: { stale_after_seconds: z.number().int().positive().default(120) },
+      annotations: { readOnlyHint: true }
+    },
+    async ({ stale_after_seconds }) => textOutput({ ok: true, agents: await listAgentHealth(config, stale_after_seconds) })
+  );
+
+  server.registerTool(
     "agent_register",
     {
       title: "Register agent",
@@ -248,7 +285,7 @@ export function registerAgentOpsMcpTools(server: McpServer, config: AppConfig): 
     "scheduler_tick",
     {
       title: "Run scheduler tick",
-      description: "Run lease expiry and cron schedule checks once.",
+      description: "Run lease expiry, stale agent detection, and cron schedule checks once.",
       inputSchema: { scheduler_id: z.string().min(1).default("mcp") },
       annotations: { readOnlyHint: false }
     },
@@ -256,10 +293,65 @@ export function registerAgentOpsMcpTools(server: McpServer, config: AppConfig): 
   );
 
   server.registerTool(
+    "scheduler_runs_list",
+    {
+      title: "List scheduler runs",
+      description: "List recent scheduler runs and summaries.",
+      inputSchema: { limit: z.number().int().positive().max(200).default(50) },
+      annotations: { readOnlyHint: true }
+    },
+    async ({ limit }) => textOutput({ ok: true, runs: await listSchedulerRuns(config, limit) })
+  );
+
+  server.registerTool(
+    "cron_schedules_list",
+    {
+      title: "List cron schedules",
+      description: "List enabled and disabled cron schedules.",
+      inputSchema: { limit: z.number().int().positive().max(200).default(50) },
+      annotations: { readOnlyHint: true }
+    },
+    async ({ limit }) => textOutput({ ok: true, cron_schedules: await listCronSchedules(config, limit) })
+  );
+
+  server.registerTool(
+    "cron_schedule_upsert",
+    {
+      title: "Upsert cron schedule",
+      description: "Create or update a recurring workflow schedule.",
+      inputSchema: cronScheduleSchema.shape,
+      annotations: { readOnlyHint: false }
+    },
+    async (input) => textOutput({ ok: true, cron_schedule: await upsertCronSchedule(config, input) })
+  );
+
+  server.registerTool(
+    "retry_policies_list",
+    {
+      title: "List retry policies",
+      description: "List task retry policies.",
+      inputSchema: { limit: z.number().int().positive().max(200).default(50) },
+      annotations: { readOnlyHint: true }
+    },
+    async ({ limit }) => textOutput({ ok: true, retry_policies: await listRetryPolicies(config, limit) })
+  );
+
+  server.registerTool(
+    "retry_policy_upsert",
+    {
+      title: "Upsert retry policy",
+      description: "Create or update retry policy for a task type.",
+      inputSchema: retryPolicySchema.shape,
+      annotations: { readOnlyHint: false }
+    },
+    async (input) => textOutput({ ok: true, retry_policy: await upsertRetryPolicy(config, input) })
+  );
+
+  server.registerTool(
     "dashboard_snapshot",
     {
       title: "Get orchestration dashboard snapshot",
-      description: "Get workflows, task queue, waiting tasks, failures, agents, webhooks, and events.",
+      description: "Get workflows, task queue, waiting tasks, failures, agents, scheduler state, webhooks, and events.",
       inputSchema: { limit: z.number().int().positive().max(200).default(50) },
       annotations: { readOnlyHint: true }
     },

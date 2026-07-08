@@ -21,8 +21,35 @@ export type AgentHeartbeat = {
   payload_json?: Record<string, unknown>;
 };
 
+type StoredAgentHeartbeat = AgentHeartbeat & {
+  id: string;
+  created_at: string;
+};
+
+export type AgentFreshness = "online" | "stale" | "offline";
+
+export type AgentHealth = RegisteredAgent & {
+  freshness: AgentFreshness;
+  stale_after_seconds: number;
+  last_seen_age_seconds?: number;
+  last_heartbeat?: {
+    id?: string;
+    status: string;
+    current_task_id?: string;
+    current_lease_id?: string;
+    queue_depth?: number;
+    created_at: string;
+  };
+  queue_stats?: {
+    queue_depth: number;
+    running_count: number;
+    failed_count: number;
+    updated_at?: string;
+  };
+};
+
 const memoryAgents = new Map<string, RegisteredAgent>();
-const memoryHeartbeats: AgentHeartbeat[] = [];
+const memoryHeartbeats: StoredAgentHeartbeat[] = [];
 
 function now(): string {
   return new Date().toISOString();
@@ -30,6 +57,21 @@ function now(): string {
 
 function createId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID()}`;
+}
+
+function ageSeconds(timestamp: string | undefined): number | undefined {
+  if (!timestamp) return undefined;
+  const parsed = Date.parse(timestamp);
+  if (!Number.isFinite(parsed)) return undefined;
+  return Math.max(0, Math.floor((Date.now() - parsed) / 1000));
+}
+
+function freshnessFor(lastSeenAt: string | undefined, staleAfterSeconds: number): AgentFreshness {
+  const age = ageSeconds(lastSeenAt);
+  if (age === undefined) return "offline";
+  if (age <= staleAfterSeconds) return "online";
+  if (age <= staleAfterSeconds * 3) return "stale";
+  return "offline";
 }
 
 function asAgent(row: Record<string, unknown>, capabilities: string[] = []): RegisteredAgent {
@@ -42,6 +84,40 @@ function asAgent(row: Record<string, unknown>, capabilities: string[] = []): Reg
     metadata_json: (row.metadata_json as Record<string, unknown>) ?? {},
     registered_at: String(row.registered_at ?? now()),
     last_seen_at: row.last_seen_at ? String(row.last_seen_at) : undefined
+  };
+}
+
+function asHealth(
+  agent: RegisteredAgent,
+  options: {
+    staleAfterSeconds: number;
+    heartbeat?: StoredAgentHeartbeat;
+    queueStats?: { queue_depth?: number; running_count?: number; failed_count?: number; updated_at?: string };
+  }
+): AgentHealth {
+  return {
+    ...agent,
+    freshness: freshnessFor(agent.last_seen_at, options.staleAfterSeconds),
+    stale_after_seconds: options.staleAfterSeconds,
+    last_seen_age_seconds: ageSeconds(agent.last_seen_at),
+    last_heartbeat: options.heartbeat
+      ? {
+          id: options.heartbeat.id,
+          status: options.heartbeat.status,
+          current_task_id: options.heartbeat.current_task_id,
+          current_lease_id: options.heartbeat.current_lease_id,
+          queue_depth: options.heartbeat.queue_depth,
+          created_at: options.heartbeat.created_at
+        }
+      : undefined,
+    queue_stats: options.queueStats
+      ? {
+          queue_depth: options.queueStats.queue_depth ?? 0,
+          running_count: options.queueStats.running_count ?? 0,
+          failed_count: options.queueStats.failed_count ?? 0,
+          updated_at: options.queueStats.updated_at
+        }
+      : undefined
   };
 }
 
@@ -111,7 +187,7 @@ export async function recordAgentHeartbeat(
   const timestamp = now();
 
   if (!isSupabaseConfigured(config)) {
-    memoryHeartbeats.unshift(input);
+    memoryHeartbeats.unshift({ id: heartbeatId, created_at: timestamp, ...input });
     const current = memoryAgents.get(input.agent_id);
     if (current) {
       memoryAgents.set(input.agent_id, {
@@ -178,4 +254,65 @@ export async function listAgents(config: AppConfig): Promise<RegisteredAgent[]> 
   return ((agents ?? []) as Array<Record<string, unknown>>).map((agent) =>
     asAgent(agent, capabilityMap.get(String(agent.id)) ?? [])
   );
+}
+
+export async function listAgentHealth(config: AppConfig, staleAfterSeconds = 120): Promise<AgentHealth[]> {
+  const agents = await listAgents(config);
+
+  if (!isSupabaseConfigured(config)) {
+    return agents.map((agent) => {
+      const heartbeat = memoryHeartbeats.find((entry) => entry.agent_id === agent.id);
+      return asHealth(agent, { staleAfterSeconds, heartbeat });
+    });
+  }
+
+  const supabase = getSupabaseClient(config);
+  const agentIds = agents.map((agent) => agent.id);
+  if (agentIds.length === 0) return [];
+
+  const { data: heartbeatRows, error: heartbeatError } = await supabase
+    .from("agent_heartbeats")
+    .select("*")
+    .in("agent_id", agentIds)
+    .order("created_at", { ascending: false })
+    .limit(Math.max(agentIds.length * 5, 50));
+  if (heartbeatError) throw new Error(`Failed to list agent heartbeats: ${heartbeatError.message}`);
+
+  const { data: queueRows, error: queueError } = await supabase
+    .from("agent_queue_stats")
+    .select("*")
+    .in("agent_id", agentIds);
+  if (queueError) throw new Error(`Failed to list agent queue stats: ${queueError.message}`);
+
+  const heartbeatMap = new Map<string, StoredAgentHeartbeat>();
+  for (const row of (heartbeatRows ?? []) as Array<Record<string, unknown>>) {
+    const agentId = String(row.agent_id);
+    if (heartbeatMap.has(agentId)) continue;
+    heartbeatMap.set(agentId, {
+      id: String(row.id),
+      agent_id: agentId,
+      status: String(row.status ?? "unknown"),
+      current_task_id: row.current_task_id ? String(row.current_task_id) : undefined,
+      current_lease_id: row.current_lease_id ? String(row.current_lease_id) : undefined,
+      queue_depth: typeof row.queue_depth === "number" ? row.queue_depth : undefined,
+      payload_json: (row.payload_json as Record<string, unknown>) ?? {},
+      created_at: String(row.created_at)
+    });
+  }
+
+  const queueMap = new Map<string, { queue_depth?: number; running_count?: number; failed_count?: number; updated_at?: string }>();
+  for (const row of (queueRows ?? []) as Array<Record<string, unknown>>) {
+    queueMap.set(String(row.agent_id), {
+      queue_depth: typeof row.queue_depth === "number" ? row.queue_depth : undefined,
+      running_count: typeof row.running_count === "number" ? row.running_count : undefined,
+      failed_count: typeof row.failed_count === "number" ? row.failed_count : undefined,
+      updated_at: row.updated_at ? String(row.updated_at) : undefined
+    });
+  }
+
+  return agents.map((agent) => asHealth(agent, {
+    staleAfterSeconds,
+    heartbeat: heartbeatMap.get(agent.id),
+    queueStats: queueMap.get(agent.id)
+  }));
 }
