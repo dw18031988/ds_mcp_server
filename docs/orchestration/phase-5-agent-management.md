@@ -42,6 +42,8 @@ Implemented tables:
 - `payload_json jsonb not null default '{}'::jsonb`
 - `created_at timestamptz not null default now()`
 
+`payload_json.remaining_credits` is used for agent credit visibility without requiring a schema migration.
+
 ### agent_queue_stats
 
 - `agent_id text primary key references agents(id)`
@@ -58,7 +60,8 @@ Agents should:
 2. Send periodic heartbeat.
 3. Claim only compatible tasks.
 4. Include current lease/task in heartbeat.
-5. Mark themselves unavailable during shutdown or maintenance.
+5. Include `remaining_credits` in heartbeat when the agent can measure quota.
+6. Mark themselves unavailable during shutdown or maintenance.
 
 ## Dispatch inputs
 
@@ -68,6 +71,7 @@ The scheduler can rank agents by:
 - heartbeat freshness
 - current lease count
 - queue depth
+- remaining credits
 - last failure count
 - task priority
 
@@ -85,6 +89,41 @@ The scheduler can rank agents by:
 - `agent_health`
 - `agent_register`
 - `agent_heartbeat`
+
+## Agent status dashboard
+
+The local-first dashboard shows an `Agent Status` table with:
+
+- agent id and name
+- freshness and runtime status
+- current task id
+- remaining credits
+- queue depth
+- last heartbeat time
+
+Heartbeat examples:
+
+```json
+{
+  "status": "running",
+  "current_task_id": "task_123",
+  "queue_depth": 1,
+  "remaining_credits": 42
+}
+```
+
+Equivalent payload-only form:
+
+```json
+{
+  "status": "running",
+  "current_task_id": "task_123",
+  "queue_depth": 1,
+  "payload_json": {
+    "remaining_credits": 42
+  }
+}
+```
 
 ## Health states
 
@@ -104,4 +143,4 @@ A scheduler tick marks agents as `stale` when `last_seen_at` is older than the c
 - The system can detect stale agents.
 - Task claim can filter by required capability.
 - Dashboard can show running agents and current lease ownership.
-- Dashboard can show agent health, queue depth, current task, and current lease.
+- Dashboard can show agent health, queue depth, current task, current lease, and remaining credits.
