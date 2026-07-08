@@ -63,6 +63,7 @@ const heartbeatSchema = z.object({
   current_task_id: z.string().optional(),
   current_lease_id: z.string().optional(),
   queue_depth: z.number().int().nonnegative().optional(),
+  remaining_credits: z.number().nonnegative().optional(),
   payload_json: z.record(z.unknown()).default({})
 });
 
