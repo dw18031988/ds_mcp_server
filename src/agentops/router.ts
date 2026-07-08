@@ -32,8 +32,15 @@ import {
   submitAsyncTaskResult
 } from "../asyncWorkflowStore.js";
 import { getOrchestrationDashboardSnapshot } from "../dashboard/orchestrationDashboard.js";
-import { listAgents, recordAgentHeartbeat, registerAgent } from "../agents/agentRegistry.js";
-import { runSchedulerTick } from "../scheduler/orchestrationScheduler.js";
+import { listAgentHealth, listAgents, recordAgentHeartbeat, registerAgent } from "../agents/agentRegistry.js";
+import {
+  listCronSchedules,
+  listRetryPolicies,
+  listSchedulerRuns,
+  runSchedulerTick,
+  upsertCronSchedule,
+  upsertRetryPolicy
+} from "../scheduler/orchestrationScheduler.js";
 import { getEnvironmentStatus, switchRuntimeEnvironment } from "../devtools/environment.js";
 
 export type AgentOpsRouterDeps = {
@@ -63,6 +70,25 @@ const schedulerTickSchema = z.object({
   scheduler_id: z.string().min(1).default("default")
 });
 
+const cronScheduleSchema = z.object({
+  id: z.string().min(1).optional(),
+  workflow_type: z.string().min(1),
+  cron_expression: z.string().min(1),
+  timezone: z.string().min(1).default("UTC"),
+  payload_json: z.record(z.unknown()).default({}),
+  enabled: z.boolean().default(true),
+  next_run_at: z.string().min(1).optional()
+});
+
+const retryPolicySchema = z.object({
+  id: z.string().min(1).optional(),
+  task_type: z.string().min(1),
+  max_attempts: z.number().int().positive().max(20).default(3),
+  base_delay_seconds: z.number().int().nonnegative().max(86_400).default(30),
+  max_delay_seconds: z.number().int().positive().max(604_800).default(3600),
+  backoff_multiplier: z.number().positive().max(10).default(2)
+});
+
 const environmentSwitchSchema = z.object({
   runtime_mode: z.enum(["local", "development", "staging", "production"]).optional(),
   db_target: z.string().min(1).optional()
@@ -72,6 +98,16 @@ const environmentSwitchSchema = z.object({
 
 function decodePathValue(value: string | undefined): string {
   return decodeURIComponent(value ?? "");
+}
+
+function queryLimit(url: URL, fallback = 50): number {
+  const limit = Number(url.searchParams.get("limit") || fallback);
+  return Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 200) : fallback;
+}
+
+function queryPositiveInt(url: URL, name: string, fallback: number): number {
+  const value = Number(url.searchParams.get(name) || fallback);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
 }
 
 function apiErrorStatus(error: Error): number {
@@ -105,10 +141,14 @@ function dashboardSection(snapshot: Awaited<ReturnType<typeof getOrchestrationDa
   if (pathname === "/api/dashboard/workflows") return { ok: true, workflows: snapshot.workflows };
   if (pathname === "/api/dashboard/tasks") return { ok: true, tasks: snapshot.task_queue };
   if (pathname === "/api/dashboard/agents/running") return { ok: true, agents: snapshot.running_agents };
+  if (pathname === "/api/dashboard/agents/health") return { ok: true, agents: snapshot.agent_health };
   if (pathname === "/api/dashboard/waiting") return { ok: true, waiting: snapshot.waiting };
   if (pathname === "/api/dashboard/failed-tasks") return { ok: true, failed_tasks: snapshot.failed_tasks };
   if (pathname === "/api/dashboard/dead-letter-tasks") return { ok: true, dead_letter_tasks: snapshot.dead_letter_tasks };
   if (pathname === "/api/dashboard/upstream-calls") return { ok: true, webhook_deliveries: snapshot.webhook_deliveries };
+  if (pathname === "/api/dashboard/cron-schedules") return { ok: true, cron_schedules: snapshot.cron_schedules };
+  if (pathname === "/api/dashboard/retry-policies") return { ok: true, retry_policies: snapshot.retry_policies };
+  if (pathname === "/api/dashboard/scheduler-runs") return { ok: true, scheduler_runs: snapshot.scheduler_runs };
   if (pathname === "/api/dashboard/events") return { ok: true, events: snapshot.events };
   return undefined;
 }
@@ -138,8 +178,7 @@ export async function handleAgentOpsRestApi(
     }
 
     if (req.method === "GET" && url.pathname.startsWith("/api/dashboard/")) {
-      const limit = Number(url.searchParams.get("limit") || 50);
-      const snapshot = await getOrchestrationDashboardSnapshot(config, Number.isFinite(limit) ? limit : 50);
+      const snapshot = await getOrchestrationDashboardSnapshot(config, queryLimit(url));
       const section = dashboardSection(snapshot, url.pathname);
       if (!section) {
         sendJson(res, 404, { error: "Dashboard route not found" });
@@ -151,6 +190,11 @@ export async function handleAgentOpsRestApi(
 
     if (req.method === "GET" && url.pathname === "/api/agents") {
       sendJson(res, 200, { ok: true, agents: await listAgents(config) });
+      return true;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/agents/health") {
+      sendJson(res, 200, { ok: true, agents: await listAgentHealth(config, queryPositiveInt(url, "stale_after_seconds", 120)) });
       return true;
     }
 
@@ -174,6 +218,33 @@ export async function handleAgentOpsRestApi(
     if (req.method === "POST" && url.pathname === "/api/scheduler/tick") {
       const body = schedulerTickSchema.parse(await readJsonBody(req));
       sendJson(res, 200, await runSchedulerTick(config, body.scheduler_id));
+      return true;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/scheduler/runs") {
+      sendJson(res, 200, { ok: true, runs: await listSchedulerRuns(config, queryLimit(url)) });
+      return true;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/scheduler/cron-schedules") {
+      sendJson(res, 200, { ok: true, cron_schedules: await listCronSchedules(config, queryLimit(url)) });
+      return true;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/scheduler/cron-schedules") {
+      const body = cronScheduleSchema.parse(await readJsonBody(req));
+      sendJson(res, 201, { ok: true, cron_schedule: await upsertCronSchedule(config, body) });
+      return true;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/scheduler/retry-policies") {
+      sendJson(res, 200, { ok: true, retry_policies: await listRetryPolicies(config, queryLimit(url)) });
+      return true;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/scheduler/retry-policies") {
+      const body = retryPolicySchema.parse(await readJsonBody(req));
+      sendJson(res, 201, { ok: true, retry_policy: await upsertRetryPolicy(config, body) });
       return true;
     }
 
