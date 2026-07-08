@@ -18,6 +18,7 @@ export type AgentHeartbeat = {
   current_task_id?: string;
   current_lease_id?: string;
   queue_depth?: number;
+  remaining_credits?: number;
   payload_json?: Record<string, unknown>;
 };
 
@@ -32,12 +33,17 @@ export type AgentHealth = RegisteredAgent & {
   freshness: AgentFreshness;
   stale_after_seconds: number;
   last_seen_age_seconds?: number;
+  current_task_id?: string;
+  current_lease_id?: string;
+  queue_depth?: number;
+  remaining_credits?: number;
   last_heartbeat?: {
     id?: string;
     status: string;
     current_task_id?: string;
     current_lease_id?: string;
     queue_depth?: number;
+    remaining_credits?: number;
     created_at: string;
   };
   queue_stats?: {
@@ -74,6 +80,37 @@ function freshnessFor(lastSeenAt: string | undefined, staleAfterSeconds: number)
   return "offline";
 }
 
+function asNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function readRemainingCredits(input: {
+  heartbeat?: AgentHeartbeat;
+  metadataJson?: Record<string, unknown>;
+}): number | undefined {
+  return asNumber(input.heartbeat?.remaining_credits) ??
+    asNumber(input.heartbeat?.payload_json?.remaining_credits) ??
+    asNumber(input.heartbeat?.payload_json?.credits_remaining) ??
+    asNumber(input.heartbeat?.payload_json?.credit_remaining) ??
+    asNumber(input.metadataJson?.remaining_credits) ??
+    asNumber(input.metadataJson?.credits_remaining) ??
+    asNumber(input.metadataJson?.credit_remaining);
+}
+
+function heartbeatPayload(input: AgentHeartbeat): Record<string, unknown> {
+  return input.remaining_credits === undefined
+    ? input.payload_json ?? {}
+    : {
+        ...(input.payload_json ?? {}),
+        remaining_credits: input.remaining_credits
+      };
+}
+
 function asAgent(row: Record<string, unknown>, capabilities: string[] = []): RegisteredAgent {
   return {
     id: String(row.id),
@@ -95,11 +132,21 @@ function asHealth(
     queueStats?: { queue_depth?: number; running_count?: number; failed_count?: number; updated_at?: string };
   }
 ): AgentHealth {
+  const remainingCredits = readRemainingCredits({
+    heartbeat: options.heartbeat,
+    metadataJson: agent.metadata_json
+  });
+  const queueDepth = options.heartbeat?.queue_depth ?? options.queueStats?.queue_depth;
+
   return {
     ...agent,
     freshness: freshnessFor(agent.last_seen_at, options.staleAfterSeconds),
     stale_after_seconds: options.staleAfterSeconds,
     last_seen_age_seconds: ageSeconds(agent.last_seen_at),
+    current_task_id: options.heartbeat?.current_task_id,
+    current_lease_id: options.heartbeat?.current_lease_id,
+    queue_depth: queueDepth,
+    remaining_credits: remainingCredits,
     last_heartbeat: options.heartbeat
       ? {
           id: options.heartbeat.id,
@@ -107,6 +154,7 @@ function asHealth(
           current_task_id: options.heartbeat.current_task_id,
           current_lease_id: options.heartbeat.current_lease_id,
           queue_depth: options.heartbeat.queue_depth,
+          remaining_credits: remainingCredits,
           created_at: options.heartbeat.created_at
         }
       : undefined,
@@ -185,9 +233,10 @@ export async function recordAgentHeartbeat(
 ): Promise<{ ok: true; heartbeat_id: string }> {
   const heartbeatId = createId("ahb");
   const timestamp = now();
+  const payload = heartbeatPayload(input);
 
   if (!isSupabaseConfigured(config)) {
-    memoryHeartbeats.unshift({ id: heartbeatId, created_at: timestamp, ...input });
+    memoryHeartbeats.unshift({ id: heartbeatId, created_at: timestamp, ...input, payload_json: payload });
     const current = memoryAgents.get(input.agent_id);
     if (current) {
       memoryAgents.set(input.agent_id, {
@@ -207,7 +256,7 @@ export async function recordAgentHeartbeat(
     current_task_id: input.current_task_id ?? null,
     current_lease_id: input.current_lease_id ?? null,
     queue_depth: input.queue_depth ?? null,
-    payload_json: input.payload_json ?? {},
+    payload_json: payload,
     created_at: timestamp
   });
   if (error) throw new Error(`Failed to record agent heartbeat: ${error.message}`);
@@ -288,6 +337,7 @@ export async function listAgentHealth(config: AppConfig, staleAfterSeconds = 120
   for (const row of (heartbeatRows ?? []) as Array<Record<string, unknown>>) {
     const agentId = String(row.agent_id);
     if (heartbeatMap.has(agentId)) continue;
+    const payloadJson = (row.payload_json as Record<string, unknown>) ?? {};
     heartbeatMap.set(agentId, {
       id: String(row.id),
       agent_id: agentId,
@@ -295,7 +345,8 @@ export async function listAgentHealth(config: AppConfig, staleAfterSeconds = 120
       current_task_id: row.current_task_id ? String(row.current_task_id) : undefined,
       current_lease_id: row.current_lease_id ? String(row.current_lease_id) : undefined,
       queue_depth: typeof row.queue_depth === "number" ? row.queue_depth : undefined,
-      payload_json: (row.payload_json as Record<string, unknown>) ?? {},
+      remaining_credits: asNumber(payloadJson.remaining_credits) ?? asNumber(payloadJson.credits_remaining),
+      payload_json: payloadJson,
       created_at: String(row.created_at)
     });
   }
