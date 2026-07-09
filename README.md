@@ -144,6 +144,61 @@ Guardrails:
 - No merge/delete/force-push/secret-management endpoints are exposed.
 ```
 
+## GitHub CI webhook setup
+
+The AgentOps control plane exposes a GitHub webhook endpoint for CI/status callbacks:
+
+```text
+POST /api/webhooks/github
+```
+
+Production URL:
+
+```text
+https://ds-mcp-server-theta.vercel.app/api/webhooks/github
+```
+
+Set this environment variable on the DS MCP deployment:
+
+```env
+GITHUB_WEBHOOK_SECRET=replace-with-a-long-random-secret
+```
+
+Then create a GitHub repository webhook with:
+
+```text
+Payload URL: https://ds-mcp-server-theta.vercel.app/api/webhooks/github
+Content type: application/json
+Secret: same value as GITHUB_WEBHOOK_SECRET
+SSL verification: enabled
+```
+
+Subscribe only to these events:
+
+```text
+workflow_run
+check_run
+check_suite
+status
+```
+
+Webhook behavior:
+
+- `ping` events return `202` and are ignored.
+- Non-final CI events return `202` and are ignored.
+- Final successful, neutral, or skipped CI results are normalized to `success`.
+- Final failed, cancelled, timed out, action required, startup failure, or error results are normalized to `failure`.
+- The normalized CI event is passed into the AgentOps GitHub CI handler, which matches waiting CI tasks by PR number or head SHA.
+- This endpoint uses GitHub `X-Hub-Signature-256` verification and intentionally bypasses `REST_API_BEARER_TOKEN`, because GitHub cannot send the REST bearer token.
+
+Local smoke test without signature, only when `GITHUB_WEBHOOK_SECRET` is unset:
+
+```bash
+curl -X POST http://localhost:8787/api/webhooks/github \
+  -H "Content-Type: application/json" \
+  -d '{"delivery_id":"manual-test-1","repo":"nhatnguyenquang1838-coder/rental_home","pr_number":101,"head_sha":"example","conclusion":"success"}'
+```
+
 GitHub REST read file test:
 
 ```bash
