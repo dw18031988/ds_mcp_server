@@ -141,7 +141,7 @@ function setCorsHeaders(res: ServerResponse): void {
   res.setHeader("Access-Control-Allow-Methods", "POST, PUT, GET, PATCH, DELETE, OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "authorization, content-type, mcp-session-id"
+    "authorization, content-type, mcp-session-id, x-github-delivery, x-github-event, x-hub-signature-256"
   );
   res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id, Content-Disposition");
 }
@@ -176,14 +176,18 @@ function parsePositiveInt(value: string | undefined, name: string): number {
   return parsed;
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+async function readRawBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
 
   for await (const chunk of req) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
 
-  const rawBody = Buffer.concat(chunks).toString("utf8");
+  return Buffer.concat(chunks);
+}
+
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  const rawBody = (await readRawBody(req)).toString("utf8");
 
   if (!rawBody.trim()) {
     return {};
@@ -385,6 +389,7 @@ function getCapabilities() {
     rest_paths: [
       "/api/capabilities",
       "/api/dashboard/upstream-calls",
+      "/api/webhooks/github",
       "/dashboard/upstream-calls",
       "/api/tasks",
       "/api/tasks/{task_id}",
@@ -426,6 +431,7 @@ function getCapabilities() {
       mcp_bearer_token_configured: Boolean(config.mcpBearerToken),
       rest_api_bearer_token_configured: Boolean(config.restApiBearerToken),
       github_token_configured: Boolean(config.githubToken),
+      github_webhook_secret_configured: Boolean(config.githubWebhookSecret),
       workspace_agent_trigger_configured: Boolean(
         config.workspaceAgentTriggerId && config.workspaceAgentToken
       ),
@@ -835,7 +841,7 @@ async function handleRestApi(req: IncomingMessage, res: ServerResponse, url: URL
     return true;
   }
 
-  if (url.pathname.startsWith("/api/") && !isRestAuthorized(req)) {
+  if (url.pathname.startsWith("/api/") && url.pathname !== "/api/webhooks/github" && !isRestAuthorized(req)) {
     setCorsHeaders(res);
     sendJson(res, 401, { error: "Unauthorized" });
     return true;
@@ -848,7 +854,8 @@ async function handleRestApi(req: IncomingMessage, res: ServerResponse, url: URL
     config,
     sendJson,
     setCorsHeaders,
-    readJsonBody
+    readJsonBody,
+    readRawBody
   });
   if (handledAgentOpsApi) return true;
 
