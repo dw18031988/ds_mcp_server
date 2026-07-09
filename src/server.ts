@@ -389,6 +389,7 @@ function getCapabilities() {
     rest_paths: [
       "/api/capabilities",
       "/api/dashboard/upstream-calls",
+      "/api/webhooks/github",
       "/dashboard/upstream-calls",
       "/api/tasks",
       "/api/tasks/{task_id}",
