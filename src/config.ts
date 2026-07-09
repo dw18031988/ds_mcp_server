@@ -14,6 +14,7 @@ export type AppConfig = {
   designSystemBackendUrl?: string;
   internalAgentResultToken?: string;
   githubToken?: string;
+  githubWebhookSecret?: string;
   githubAllowedRepos: string[];
   githubDefaultBaseBranch: string;
   githubAllowedBranchPrefixes: string[];
@@ -140,6 +141,7 @@ export function loadConfig(): AppConfig {
     designSystemBackendUrl: process.env.DS_BACKEND_URL || undefined,
     internalAgentResultToken: process.env.INTERNAL_AGENT_RESULT_TOKEN || undefined,
     githubToken: process.env.GITHUB_TOKEN || undefined,
+    githubWebhookSecret: process.env.GITHUB_WEBHOOK_SECRET || undefined,
     githubAllowedRepos: readCsv(process.env.GITHUB_ALLOWED_REPOS),
     githubDefaultBaseBranch: process.env.GITHUB_DEFAULT_BASE_BRANCH || "main",
     githubAllowedBranchPrefixes: readCsv(process.env.GITHUB_ALLOWED_BRANCH_PREFIXES, [
