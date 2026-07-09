@@ -11,6 +11,7 @@ import {
   recordWebhookDelivery,
   updateTaskResultRecord
 } from "./repositories/orchestrationRepository.js";
+import { claimFilterSnapshot, taskMatchesClaimFilters } from "./agentops/claimTargeting.js";
 import { applyTaskResultTransition } from "./state/stateEngine.js";
 
 export type AsyncWorkflowStatus = "running" | "waiting" | "succeeded" | "failed" | "cancelled";
@@ -142,56 +143,6 @@ function nextTaskType(task: AsyncTask, result: Record<string, unknown>): AsyncTa
   return undefined;
 }
 
-function contextString(context: Record<string, unknown>, keys: string[]): string | undefined {
-  for (const key of keys) {
-    const value = context[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
-    if (typeof value === "number" && Number.isFinite(value)) return String(value);
-  }
-  return undefined;
-}
-
-function contextNumber(context: Record<string, unknown>, keys: string[]): number | undefined {
-  for (const key of keys) {
-    const value = context[key];
-    if (typeof value === "number" && Number.isFinite(value)) return value;
-    if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
-  }
-  return undefined;
-}
-
-function repoFullName(context: Record<string, unknown>): string | undefined {
-  const explicit = contextString(context, ["repo", "repository", "repo_full_name"]);
-  if (explicit) return explicit;
-  const owner = contextString(context, ["repo_owner", "owner"]);
-  const name = contextString(context, ["repo_name", "repository_name"]);
-  return owner && name ? `${owner}/${name}` : undefined;
-}
-
-function memoryTaskMatchesClaimFilters(task: AsyncTask, input: AsyncTaskClaimInput): boolean {
-  if (input.task_id && task.id !== input.task_id) return false;
-  if (input.workflow_id && task.workflow_id !== input.workflow_id) return false;
-
-  const workflow = workflows.get(task.workflow_id);
-  const context = {
-    ...(workflow?.context_json ?? {}),
-    ...(task.payload_json ?? {})
-  };
-  const repo = repoFullName(context);
-  const repoOwner = contextString(context, ["repo_owner", "owner"]);
-  const repoName = contextString(context, ["repo_name", "repository_name"]);
-  const branch = contextString(context, ["repo_branch", "work_branch", "branch"]);
-  const prNumber = contextNumber(context, ["pr_number", "pull_number"]);
-
-  if (input.repo && repo !== input.repo) return false;
-  if (input.repo_owner && repoOwner !== input.repo_owner) return false;
-  if (input.repo_name && repoName !== input.repo_name) return false;
-  const expectedBranch = input.repo_branch ?? input.branch;
-  if (expectedBranch && branch !== expectedBranch) return false;
-  if (input.pr_number && prNumber !== input.pr_number) return false;
-
-  return true;
-}
 
 export async function createAsyncWorkflow(config: AppConfig, input: {
   name: string;
@@ -254,7 +205,7 @@ export async function claimAsyncTask(config: AppConfig, input: AsyncTaskClaimInp
   const nowMs = Date.now();
   const task = [...tasks.values()].find((candidate) => {
     if (!input.capabilities.includes(candidate.type)) return false;
-    if (!memoryTaskMatchesClaimFilters(candidate, input)) return false;
+    if (!taskMatchesClaimFilters(candidate, workflows.get(candidate.workflow_id), input)) return false;
     if (candidate.status === "queued") return true;
     if (candidate.status !== "leased") return false;
     return candidate.lease_expires_at ? Date.parse(candidate.lease_expires_at) <= nowMs : false;
@@ -272,16 +223,7 @@ export async function claimAsyncTask(config: AppConfig, input: AsyncTaskClaimInp
     actor: "agent",
     data_json: {
       agent_id: input.agent_id,
-      claim_filters: {
-        task_id: input.task_id,
-        workflow_id: input.workflow_id,
-        repo: input.repo,
-        repo_owner: input.repo_owner,
-        repo_name: input.repo_name,
-        branch: input.branch,
-        repo_branch: input.repo_branch,
-        pr_number: input.pr_number
-      }
+      claim_filters: claimFilterSnapshot(input)
     }
   });
   return task;
