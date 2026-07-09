@@ -176,14 +176,18 @@ function parsePositiveInt(value: string | undefined, name: string): number {
   return parsed;
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+async function readRawBody(req: IncomingMessage): Promise<Buffer> {
   const chunks: Buffer[] = [];
 
   for await (const chunk of req) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
 
-  const rawBody = Buffer.concat(chunks).toString("utf8");
+  return Buffer.concat(chunks);
+}
+
+async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  const rawBody = (await readRawBody(req)).toString("utf8");
 
   if (!rawBody.trim()) {
     return {};
