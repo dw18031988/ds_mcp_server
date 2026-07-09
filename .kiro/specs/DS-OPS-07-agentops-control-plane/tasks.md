@@ -2,16 +2,17 @@
 
 ## Overview
 
-Implement DS AgentOps Phase 7 as a set of small, guarded control-plane increments. The work starts with compact read APIs and deterministic CI mapping, then hardens lease lifecycle, operator recovery actions, role boundaries, optional callbacks, and CI diagnostics. Each task must preserve the current MVP flow and maintain Supabase/memory fallback behavior where practical.
+Implement DS AgentOps Phase 7 as a set of small, guarded control-plane increments. The work starts with targeted task claiming, compact read APIs, and deterministic CI mapping, then hardens lease lifecycle, operator recovery actions, role boundaries, optional callbacks, and CI diagnostics. Each task must preserve the current MVP flow and maintain Supabase/memory fallback behavior where practical.
 
 ## Task Dependency Graph
 
 ```mermaid
 graph TD
   T1[1. Inspect current AgentOps implementation] --> T2[2. Add shared schemas and role policy]
-  T2 --> T3[3. Add Workflow Status API]
-  T2 --> T4[4. Add structured CI identity mapping]
-  T2 --> T5[5. Add lease lifecycle APIs]
+  T2 --> T2A[2A. Add targeted async task claim safety]
+  T2A --> T3[3. Add Workflow Status API]
+  T2A --> T4[4. Add structured CI identity mapping]
+  T2A --> T5[5. Add lease lifecycle APIs]
   T3 --> T6[6. Add dashboard/operator control actions]
   T4 --> T6
   T5 --> T6
@@ -32,7 +33,7 @@ graph TD
     {
       "id": "wave-1",
       "description": "Inspection and shared foundation",
-      "tasks": ["1", "2"]
+      "tasks": ["1", "2", "2A"]
     },
     {
       "id": "wave-2",
@@ -65,14 +66,23 @@ graph TD
   - Confirm current Supabase and memory-store behavior.
   - Confirm current task statuses, workflow statuses, retry policy behavior, and event model.
   - Identify existing OpenAPI/capabilities surfaces that need updates.
-  - _Requirements: 1, 2, 3, 4, 5, 6, 7, 8_
+  - _Requirements: 1, 2, 3, 4, 5, 6, 7, 8, 9_
 
 - [ ] 2. Add shared schemas and role policy
-  - Add or extend Zod schemas for workflow status, CI identity, lease renew/release, operator actions, callback config, and diagnostics metadata.
+  - Add or extend Zod schemas for workflow status, targeted async task claims, CI identity, lease renew/release, operator actions, callback config, and diagnostics metadata.
   - Add `AgentOpsRole` and ownership policy helpers.
   - Add common idempotency input handling where current patterns support it.
   - Keep all schema validation close to route/service boundaries.
-  - _Requirements: 2, 3, 4, 5, 6, 7, 8_
+  - _Requirements: 2, 3, 4, 5, 6, 7, 8, 9_
+
+- [ ] 2A. Add targeted async task claim safety
+  - Extend `POST /api/async-tasks/claim` schema with optional `task_id`, `workflow_id`, `repo`, `repo_owner`, `repo_name`, `branch`, `repo_branch`, and `pr_number` filters.
+  - Match claim filters against merged workflow context and task payload metadata.
+  - Ensure targeted claims do not fall back to unrelated capability-only tasks when filters do not match.
+  - Add the supplied claim filters to `task_claimed` audit events.
+  - Treat `wrong_task_claimed`, `claim_filter_mismatch`, and `claim_target_mismatch` as non-retryable failures that move to `dead_letter` instead of retry/requeue loop.
+  - Keep Supabase-backed and memory fallback claim behavior aligned where practical.
+  - _Requirements: 3, 8, 9_
 
 - [ ] 3. Add Workflow Status API
   - Implement `GET /api/workflows/{workflow_id}/status`.
@@ -141,12 +151,13 @@ graph TD
 
 - [ ] 11. Add tests
   - Add unit tests for compact status projection.
+  - Add unit tests for targeted claim filtering and wrong-claim non-retry behavior.
   - Add unit tests for CI identity matching and ambiguity detection.
   - Add unit tests for lease lifecycle and expired lease recovery.
   - Add unit tests for role policy matrix.
   - Add integration-style tests for new router endpoints if current repo test conventions support them.
   - Add diagnostics redaction/size-cap tests.
-  - _Requirements: 1, 2, 3, 4, 5, 6, 7, 8_
+  - _Requirements: 1, 2, 3, 4, 5, 6, 7, 8, 9_
 
 - [ ] 12. Validate and final report
   - Run `npm run typecheck`.
@@ -154,7 +165,7 @@ graph TD
   - Run relevant tests if test scripts are added.
   - Report changed files, behavior changed, validation result, risks, and blockers.
   - Ensure PR CI is green before merge.
-  - _Requirements: 1, 2, 3, 4, 5, 6, 7, 8_
+  - _Requirements: 1, 2, 3, 4, 5, 6, 7, 8, 9_
 
 ## Notes
 
@@ -166,3 +177,4 @@ graph TD
 - Keep Supabase-configured behavior and local memory fallback behavior aligned where practical.
 - Use `npm run typecheck` and `npm run build` as required validation.
 - All important transitions must create event/audit trail records.
+- Targeted claim filters are required for production agent runs; capability-only claim is allowed only for broad worker pools where wrong-claim risk is acceptable.
