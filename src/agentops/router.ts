@@ -42,12 +42,18 @@ import {
   upsertRetryPolicy
 } from "../scheduler/orchestrationScheduler.js";
 import { getEnvironmentStatus, switchRuntimeEnvironment } from "../devtools/environment.js";
+import {
+  normalizeGithubCiWebhook,
+  parseGithubWebhookBody,
+  verifyGithubWebhookSignature
+} from "./githubWebhook.js";
 
 export type AgentOpsRouterDeps = {
   config: AppConfig;
   sendJson: (res: ServerResponse, statusCode: number, body: unknown) => void;
   setCorsHeaders: (res: ServerResponse) => void;
   readJsonBody: (req: IncomingMessage) => Promise<unknown>;
+  readRawBody: (req: IncomingMessage) => Promise<Buffer>;
 };
 
 const registerAgentSchema = z.object({
@@ -160,7 +166,7 @@ export async function handleAgentOpsRestApi(
   url: URL,
   deps: AgentOpsRouterDeps
 ): Promise<boolean> {
-  const { config, sendJson, setCorsHeaders, readJsonBody } = deps;
+  const { config, sendJson, setCorsHeaders, readJsonBody, readRawBody } = deps;
 
   if (!isAgentOpsPath(url.pathname)) return false;
 
@@ -288,7 +294,30 @@ export async function handleAgentOpsRestApi(
     }
 
     if (req.method === "POST" && url.pathname === "/api/webhooks/github") {
-      const body = githubCiEventSchema.parse(await readJsonBody(req));
+      const rawBody = await readRawBody(req);
+      const signature = req.headers["x-hub-signature-256"];
+      const signatureHeader = Array.isArray(signature) ? signature[0] : signature;
+
+      if (config.githubWebhookSecret && !verifyGithubWebhookSignature(config.githubWebhookSecret, rawBody, signatureHeader)) {
+        sendJson(res, 401, { ok: false, error: "Invalid GitHub webhook signature" });
+        return true;
+      }
+
+      const payload = parseGithubWebhookBody(rawBody);
+      const deliveryHeader = req.headers["x-github-delivery"];
+      const eventHeader = req.headers["x-github-event"];
+      const normalized = normalizeGithubCiWebhook({
+        eventName: Array.isArray(eventHeader) ? eventHeader[0] : eventHeader,
+        deliveryId: Array.isArray(deliveryHeader) ? deliveryHeader[0] : deliveryHeader,
+        payload
+      });
+
+      if (normalized.ignored) {
+        sendJson(res, 202, { ok: true, ignored: true, reason: normalized.reason });
+        return true;
+      }
+
+      const body = githubCiEventSchema.parse(normalized.event);
       sendJson(res, 200, { ok: true, ...(await handleGithubCiEvent(config, body)) });
       return true;
     }
