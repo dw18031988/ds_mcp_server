@@ -18,6 +18,7 @@ Client / Dashboard / Agent
   -> src/server.ts
   -> src/agentops/router.ts
       -> workflowStatusService
+      -> claimTargetingService
       -> leaseService
       -> controlActionService
       -> ownershipPolicy
@@ -163,6 +164,48 @@ export function matchWaitingCiTask(input: {
   event_identity: CiIdentity;
   waiting_tasks: AsyncTask[];
 }): CiMatchResult;
+```
+
+### ClaimTargetingService
+
+Suggested path:
+
+```txt
+src/agentops/claimTargetingService.ts
+```
+
+Responsibility:
+
+- Normalize targeted claim filters from `POST /api/async-tasks/claim`.
+- Merge workflow context and task payload metadata before filter evaluation.
+- Prevent fallback to unrelated capability-only tasks when target filters are supplied.
+- Emit claim filters into `task_claimed` audit events for traceability.
+- Classify `wrong_task_claimed`, `claim_filter_mismatch`, and `claim_target_mismatch` as non-retryable failures.
+
+Interface:
+
+```ts
+export type AsyncTaskClaimInput = {
+  agent_id: string;
+  capabilities: AsyncTaskType[];
+  lease_seconds?: number;
+  task_id?: string;
+  workflow_id?: string;
+  repo?: string;
+  repo_owner?: string;
+  repo_name?: string;
+  branch?: string;
+  repo_branch?: string;
+  pr_number?: number;
+};
+
+export function taskMatchesClaimFilters(input: {
+  task: AsyncTask;
+  workflow?: AsyncWorkflow;
+  claim: AsyncTaskClaimInput;
+}): boolean;
+
+export function isNonRetryableClaimFailure(reason?: string): boolean;
 ```
 
 ### LeaseService
@@ -414,6 +457,33 @@ Mapping rules:
 4. Never fall back to `pr_number` without matching `repo`.
 5. Treat multiple same-precedence matches as ambiguous.
 
+### AsyncTaskClaimInput
+
+```ts
+type AsyncTaskClaimInput = {
+  agent_id: string;
+  capabilities: AsyncTaskType[];
+  lease_seconds?: number;
+  task_id?: string;
+  workflow_id?: string;
+  repo?: string;
+  repo_owner?: string;
+  repo_name?: string;
+  branch?: string;
+  repo_branch?: string;
+  pr_number?: number;
+};
+```
+
+Mapping rules:
+
+1. `task_id` is the strongest target and must not fall back to any other task.
+2. `workflow_id` limits claims to tasks inside that workflow.
+3. Repository filters match against merged workflow context and task payload metadata.
+4. `branch` and `repo_branch` are equivalent claim aliases; persisted context may use `work_branch`, `repo_branch`, or `branch`.
+5. If any supplied filter does not match, the candidate task is skipped.
+6. If no candidate matches, the claim returns no task rather than claiming an unrelated capability-only task.
+
 ### Lease State
 
 ```ts
@@ -496,6 +566,15 @@ type CiDiagnostics = {
 - Ambiguous matches must not transition tasks.
 - Duplicate delivery IDs must not create duplicate task transitions.
 
+### Claim targeting invariants
+
+- A targeted claim must never lease a task outside the requested `task_id`, `workflow_id`, repository, branch, or PR filter.
+- Capability-only claim remains valid only when no target filters are supplied.
+- A target filter mismatch must skip the candidate task instead of relaxing the filter.
+- A wrong-task claim failure must not enter the retry loop.
+- `wrong_task_claimed`, `claim_filter_mismatch`, and `claim_target_mismatch` failures must move to `dead_letter` or another explicitly non-retryable terminal recovery state.
+- `task_claimed` audit events must include the filters used for claim decisions.
+
 ### Lease invariants
 
 - Only the current lease owner can renew or release a live lease.
@@ -520,7 +599,7 @@ type CiDiagnostics = {
 - Return `401` when REST bearer authorization fails.
 - Return `403` when role policy denies the action.
 - Return `404` when workflow/task is not found.
-- Return `409` for invalid state transition, non-owner lease renew/release, or ambiguous CI mapping.
+- Return `409` for invalid state transition, non-owner lease renew/release, ambiguous CI mapping, or targeted claim conflict when an exact target is not claimable.
 - Return `422` when callback URL or CI identity is structurally invalid.
 - Return `502` only for external GitHub/callback fetch failures that prevent an explicit force-refresh result.
 - Always write an audit event for rejected operator actions when actor context is available.
@@ -532,6 +611,8 @@ Unit tests:
 - Workflow status projection from workflow/task/event fixtures.
 - CI identity normalization and match precedence.
 - Ambiguous CI match handling.
+- Targeted claim filter matching for task, workflow, repo, branch, and PR metadata.
+- Non-retryable wrong-claim failure handling.
 - Lease renew/release ownership rules.
 - Expired lease recovery retry/dead-letter behavior.
 - Ownership policy allow/deny matrix.
