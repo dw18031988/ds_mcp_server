@@ -155,7 +155,7 @@ POST /api/webhooks/github
 Production URL:
 
 ```text
-https://ds-mcp-server-theta.vercel.app/api/webhooks/github
+https://ds-mcp-server-one.vercel.app/api/webhooks/github
 ```
 
 Set this environment variable on the DS MCP deployment:
@@ -167,7 +167,7 @@ GITHUB_WEBHOOK_SECRET=replace-with-a-long-random-secret
 Then create a GitHub repository webhook with:
 
 ```text
-Payload URL: https://ds-mcp-server-theta.vercel.app/api/webhooks/github
+Payload URL: https://ds-mcp-server-one.vercel.app/api/webhooks/github
 Content type: application/json
 Secret: same value as GITHUB_WEBHOOK_SECRET
 SSL verification: enabled
