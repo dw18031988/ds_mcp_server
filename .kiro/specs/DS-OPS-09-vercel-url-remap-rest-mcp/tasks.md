@@ -168,3 +168,4 @@ graph TD
 - Do not write directly to `main`.
 - Use guarded branch prefix `docs/`.
 - If connector write access is blocked, export patch or ZIP and report the blocker.
+- CI watch note: a follow-up commit was pushed to retrigger pull-request validation for the current branch head.
