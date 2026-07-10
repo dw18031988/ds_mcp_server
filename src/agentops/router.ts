@@ -47,6 +47,7 @@ import {
   parseGithubWebhookBody,
   verifyGithubWebhookSignature
 } from "./githubWebhook.js";
+import { PayloadTooLargeError } from "../security/requestLimits.js";
 
 export type AgentOpsRouterDeps = {
   config: AppConfig;
@@ -294,11 +295,16 @@ export async function handleAgentOpsRestApi(
     }
 
     if (req.method === "POST" && url.pathname === "/api/webhooks/github") {
+      if (!config.githubWebhookSecret) {
+        sendJson(res, 404, { ok: false, error: "GitHub webhook is disabled" });
+        return true;
+      }
+
       const rawBody = await readRawBody(req);
       const signature = req.headers["x-hub-signature-256"];
       const signatureHeader = Array.isArray(signature) ? signature[0] : signature;
 
-      if (config.githubWebhookSecret && !verifyGithubWebhookSignature(config.githubWebhookSecret, rawBody, signatureHeader)) {
+      if (!verifyGithubWebhookSignature(config.githubWebhookSecret, rawBody, signatureHeader)) {
         sendJson(res, 401, { ok: false, error: "Invalid GitHub webhook signature" });
         return true;
       }
@@ -391,6 +397,11 @@ export async function handleAgentOpsRestApi(
     sendJson(res, 404, { error: "AgentOps task route not found" });
     return true;
   } catch (error) {
+    if (error instanceof PayloadTooLargeError) {
+      sendJson(res, 413, { error: error.message });
+      return true;
+    }
+
     if (error instanceof SyntaxError) {
       sendJson(res, 400, { error: "Invalid JSON body" });
       return true;

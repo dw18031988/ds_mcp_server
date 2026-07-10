@@ -124,6 +124,18 @@ REST test:
 curl http://localhost:8787/api/design-requests/DSR-001
 ```
 
+## Security setup
+
+The server now supports a stricter production perimeter:
+
+- `SECURITY_ENFORCEMENT=strict` keeps sensitive routes fail-closed, while still allowing the server to boot when optional integrations like GitHub webhooks are not configured.
+- `CORS_ALLOWED_ORIGINS` narrows browser access when you need cross-origin REST calls.
+- `MAX_JSON_BODY_BYTES` limits request payload size before parsing.
+- `RATE_LIMIT_WINDOW_MS` and `RATE_LIMIT_MAX_REQUESTS` control sensitive-route rate limiting.
+- `GET /api/security/posture` reports the current security posture and recent signals.
+
+In strict mode, the server expects Supabase to be configured so the rate limiter can use the `security_rate_limit_acquire` RPC instead of only in-memory state.
+
 Submit test result:
 
 ```bash
@@ -153,7 +165,7 @@ Set these env vars before using GitHub tools:
 
 ```env
 GITHUB_TOKEN=github_pat_xxx
-GITHUB_ALLOWED_REPOS=nhatnguyenquang1838-coder/ds_mcp_server,nhatnguyenquang1838-coder/rental_home
+GITHUB_ALLOWED_REPOS=dw18031988/ds_mcp_server,nhatnguyenquang1838-coder/rental_home
 GITHUB_DEFAULT_BASE_BRANCH=main
 GITHUB_ALLOWED_BRANCH_PREFIXES=feature/,fix/,chore/,docs/,ai/
 ```
@@ -236,13 +248,13 @@ curl -X POST http://localhost:8787/api/webhooks/github \
 GitHub REST read file test:
 
 ```bash
-curl "http://localhost:8787/api/github/repos/nhatnguyenquang1838-coder/ds_mcp_server/files?path=README.md"
+curl "http://localhost:8787/api/github/repos/dw18031988/ds_mcp_server/files?path=README.md"
 ```
 
 Create branch test:
 
 ```bash
-curl -X POST http://localhost:8787/api/github/repos/nhatnguyenquang1838-coder/ds_mcp_server/branches \
+curl -X POST http://localhost:8787/api/github/repos/dw18031988/ds_mcp_server/branches \
   -H "Content-Type: application/json" \
   -d '{"branch":"docs/test-github-gateway","from_branch":"main"}'
 ```
@@ -250,7 +262,7 @@ curl -X POST http://localhost:8787/api/github/repos/nhatnguyenquang1838-coder/ds
 Create/update file test:
 
 ```bash
-curl -X POST http://localhost:8787/api/github/repos/nhatnguyenquang1838-coder/ds_mcp_server/files \
+curl -X POST http://localhost:8787/api/github/repos/dw18031988/ds_mcp_server/files \
   -H "Content-Type: application/json" \
   -d '{
     "path":"docs/test-github-gateway.md",
@@ -263,7 +275,7 @@ curl -X POST http://localhost:8787/api/github/repos/nhatnguyenquang1838-coder/ds
 Create PR test:
 
 ```bash
-curl -X POST http://localhost:8787/api/github/repos/nhatnguyenquang1838-coder/ds_mcp_server/pull-requests \
+curl -X POST http://localhost:8787/api/github/repos/dw18031988/ds_mcp_server/pull-requests \
   -H "Content-Type: application/json" \
   -d '{
     "title":"docs: test github gateway",
@@ -290,10 +302,14 @@ Example with ngrok:
 ngrok http 8787
 ```
 
-Use the public MCP endpoint in ChatGPT:
+OAuth discovery endpoints exposed by this server:
 
 ```text
-https://<your-ngrok-domain>/mcp
+https://<your-public-domain>/.well-known/oauth-authorization-server
+https://<your-public-domain>/.well-known/oauth-protected-resource
+https://<your-public-domain>/oauth/register
+https://<your-public-domain>/oauth/authorize
+https://<your-public-domain>/oauth/token
 ```
 
 ## ChatGPT MCP connector setup
@@ -308,16 +324,30 @@ Settings
 -> Create connector
 ```
 
-Use:
+Use OAuth and point ChatGPT at the public MCP endpoint:
 
 ```text
 Name: Design System MCP
 URL: https://<your-public-domain>/mcp
+Authentication: OAuth
+```
+
+If ChatGPT asks for OAuth endpoints, use:
+
+```text
+Authorization URL: https://<your-public-domain>/oauth/authorize
+Token URL: https://<your-public-domain>/oauth/token
+Registration URL: https://<your-public-domain>/oauth/register
+Discovery URL: https://<your-public-domain>/.well-known/oauth-authorization-server
 ```
 
 ## Custom GPT Actions setup
 
-Use `openapi.yaml` in this repo when configuring Custom GPT Actions.
+Use the dedicated schema file for Custom GPT Actions:
+
+```text
+docs/openapi/ds-mcp-custom-agent-v2.yaml
+```
 
 Important: Custom GPT Actions should call REST endpoints, not `/mcp` directly.
 
@@ -327,11 +357,27 @@ Use server URL:
 https://<your-public-domain>
 ```
 
-## Optional bearer auth
+Authentication:
 
-For local prototype, `MCP_BEARER_TOKEN` may be empty.
+- Choose `API Key`
+- Header name: `Authorization`
+- Value format: `Bearer <REST_API_BEARER_TOKEN>`
+- `GET /health` and `GET /api/capabilities` stay public for smoke tests
 
-Before exposing to the internet, set:
+Quick smoke test:
+
+```bash
+curl https://<your-public-domain>/api/capabilities
+curl -H "Authorization: Bearer <REST_API_BEARER_TOKEN>" https://<your-public-domain>/api/tasks
+```
+
+If the second call returns `401`, verify the bearer token matches the Vercel production environment variable exactly.
+
+## MCP auth options
+
+OAuth is the preferred connector flow.
+
+For local tools like MCP Inspector, you can still use bearer auth:
 
 ```env
 MCP_BEARER_TOKEN=replace-with-a-long-random-token
@@ -343,7 +389,13 @@ Then MCP clients must send:
 Authorization: Bearer replace-with-a-long-random-token
 ```
 
-Note: the REST wrapper currently does not require this bearer token. Add real auth before using it with sensitive data.
+`MCP_URL_SECRET` is still supported as a temporary compatibility path, but new
+ChatGPT connector setups should use OAuth.
+
+If `PUBLIC_BASE_URL` is not set, the server falls back to `VERCEL_URL` when it is available in production.
+
+The REST wrapper still enforces `REST_API_BEARER_TOKEN` for sensitive routes in production. Keep `GET /health` public, and use `GET /api/capabilities` only for connector smoke tests.
+If you want a quick security check from the admin UI, load `/admin` with the bearer token and inspect the security posture panel.
 
 ## Backend result forwarding
 
@@ -375,7 +427,8 @@ npm start          # run compiled server
 
 Minimum controls before production:
 
-- Set `MCP_BEARER_TOKEN` or implement OAuth for MCP.
+- Set `PUBLIC_BASE_URL` when you want a stable OAuth issuer URL, or rely on `VERCEL_URL` on Vercel.
+- Keep `MCP_BEARER_TOKEN` only for direct MCP clients and local inspection.
 - Add auth for REST endpoints before using real data.
 - Keep write tools narrow and schema-validated.
 - Do not expose destructive tools in MVP.

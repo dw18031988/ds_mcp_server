@@ -9,9 +9,13 @@ servers:
   - url: https://ds-mcp-server-one.vercel.app
     description: DS MCP production
 
+security:
+  - bearerAuth: []
+
 paths:
   /health:
     get:
+      security: []
       summary: Kiểm tra server còn sống
       operationId: healthCheck
       x-openai-isConsequential: false
@@ -36,6 +40,15 @@ paths:
       responses:
         "200":
           description: URL diagnostics không chứa secrets
+  /api/capabilities:
+    get:
+      security: []
+      summary: Xem capability và guardrail hiện tại
+      operationId: getCapabilities
+      x-openai-isConsequential: false
+      responses:
+        "200":
+          description: Danh sách capability
           content:
             application/json:
               schema:
@@ -416,6 +429,12 @@ paths:
           description: Không thể commit upload session
 
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: DS_API_TOKEN
+
   parameters:
     Owner:
       name: owner
@@ -423,7 +442,7 @@ components:
       required: true
       schema:
         type: string
-      example: nhatnguyenquang1838-coder
+      example: dw18031988
     Repo:
       name: repo
       in: path
