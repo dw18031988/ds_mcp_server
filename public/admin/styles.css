@@ -171,6 +171,43 @@ h3 {
   margin-bottom: 18px;
 }
 
+.security-panel {
+  border-top: 1px solid var(--line);
+  margin-bottom: 18px;
+  padding-top: 18px;
+}
+
+.security-controls,
+.security-signals {
+  display: grid;
+  gap: 8px;
+}
+
+.security-control,
+.security-signal {
+  background: var(--soft);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.security-control {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.security-control strong,
+.security-signal strong {
+  font-size: 13px;
+}
+
+.security-control span,
+.security-signal span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .metric {
   background: var(--soft);
   border-radius: 14px;

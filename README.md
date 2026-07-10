@@ -98,6 +98,7 @@ The server now supports a stricter production perimeter:
 - `CORS_ALLOWED_ORIGINS` narrows browser access when you need cross-origin REST calls.
 - `MAX_JSON_BODY_BYTES` limits request payload size before parsing.
 - `RATE_LIMIT_WINDOW_MS` and `RATE_LIMIT_MAX_REQUESTS` control sensitive-route rate limiting.
+- `GET /api/security/posture` reports the current security posture and recent signals.
 
 In strict mode, the server expects Supabase to be configured so the rate limiter can use the `security_rate_limit_acquire` RPC instead of only in-memory state.
 
@@ -360,6 +361,7 @@ ChatGPT connector setups should use OAuth.
 If `PUBLIC_BASE_URL` is not set, the server falls back to `VERCEL_URL` when it is available in production.
 
 The REST wrapper still enforces `REST_API_BEARER_TOKEN` for sensitive routes in production. Keep `GET /health` public, and use `GET /api/capabilities` only for connector smoke tests.
+If you want a quick security check from the admin UI, load `/admin` with the bearer token and inspect the security posture panel.
 
 ## Backend result forwarding
 

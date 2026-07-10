@@ -12,6 +12,12 @@ export type ResolvedRoutePolicy = {
   sensitive: boolean;
 };
 
+export type ResolvedRateLimitPolicy = {
+  windowMs: number;
+  maxRequests: number;
+  label: string;
+};
+
 function isAdminAsset(pathname: string): boolean {
   return pathname === "/admin" || pathname.startsWith("/admin/");
 }
@@ -61,6 +67,52 @@ function isOAuthPath(pathname: string): boolean {
   );
 }
 
+export function resolveRateLimitPolicy(method: string, pathname: string): ResolvedRateLimitPolicy | undefined {
+  const normalizedMethod = method.toUpperCase();
+
+  if (isOAuthPath(pathname)) {
+    return { windowMs: 10 * 60_000, maxRequests: 10, label: "oauth" };
+  }
+
+  if (pathname === "/api/security/posture") {
+    return { windowMs: 60_000, maxRequests: 60, label: "security-admin" };
+  }
+
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+    return { windowMs: 60_000, maxRequests: 60, label: "security-admin" };
+  }
+
+  if (pathname === "/dashboard/upstream-calls" || pathname.startsWith("/api/dashboard/")) {
+    return { windowMs: 60_000, maxRequests: 120, label: "dashboard-read" };
+  }
+
+  if (pathname.startsWith("/api/upload")) {
+    return { windowMs: 60_000, maxRequests: 5, label: "upload-write" };
+  }
+
+  if (pathname.startsWith("/api/github/") && normalizedMethod === "POST") {
+    return { windowMs: 60_000, maxRequests: 10, label: "github-write" };
+  }
+
+  if (
+    (pathname === "/api/tasks" && normalizedMethod === "POST") ||
+    (pathname.startsWith("/api/tasks/") && normalizedMethod === "POST") ||
+    (pathname === "/api/workflows" && normalizedMethod === "POST") ||
+    (pathname.startsWith("/api/workflows/") && normalizedMethod === "POST") ||
+    pathname === "/api/agent-results" ||
+    pathname === "/api/agent-runs" ||
+    pathname.startsWith("/api/agent-runs/")
+  ) {
+    return { windowMs: 60_000, maxRequests: 30, label: "task-write" };
+  }
+
+  if (pathname.startsWith("/internal/agent-runs")) {
+    return { windowMs: 60_000, maxRequests: 30, label: "internal-callback" };
+  }
+
+  return undefined;
+}
+
 export function resolveRoutePolicy(method: string, pathname: string): ResolvedRoutePolicy {
   const normalizedMethod = method.toUpperCase();
 
@@ -102,6 +154,10 @@ export function resolveRoutePolicy(method: string, pathname: string): ResolvedRo
 
   if (isDashboardPath(pathname)) {
     return { routeId: "dashboard.operational", policy: "rest_bearer", sensitive: true };
+  }
+
+  if (pathname === "/api/security/posture") {
+    return { routeId: "security.posture", policy: "rest_bearer", sensitive: true };
   }
 
   if (isAdminAsset(pathname)) {

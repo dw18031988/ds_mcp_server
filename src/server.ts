@@ -42,6 +42,8 @@ import { handleAgentOpsRestApi } from "./agentops/router.js";
 import { handleGitHubUploadRestApi } from "./githubUploadRouter.js";
 import { acquireRateLimit } from "./security/rateLimit.js";
 import { authorizeRoute } from "./security/auth.js";
+import { buildSecurityPosture } from "./security/posture.js";
+import { recordSecuritySignal } from "./security/monitoring.js";
 import {
   buildOAuthMetadataJson,
   buildOAuthProtectedResourceJson,
@@ -53,7 +55,7 @@ import {
   registerOAuthClient,
   refreshOAuthAccessToken
 } from "./security/oauth.js";
-import { resolveRoutePolicy } from "./security/routePolicy.js";
+import { resolveRateLimitPolicy, resolveRoutePolicy } from "./security/routePolicy.js";
 import {
   formatSecurityStartupError,
   validateSecurityStartup
@@ -131,6 +133,38 @@ function setSecurityHeaders(res: ServerResponse): void {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+
+  if (config.runtimeMode === "production" || config.securityEnforcement === "strict") {
+    res.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+  }
+}
+
+function adminContentSecurityPolicy(): string {
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "img-src 'self' data:",
+    "script-src 'self'",
+    "style-src 'self'"
+  ].join("; ");
+}
+
+function inlineStyleContentSecurityPolicy(): string {
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "img-src 'self' data:",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "connect-src 'self' https://*.supabase.co"
+  ].join("; ");
 }
 
 function firstHeader(value: string | string[] | undefined): string | undefined {
@@ -267,6 +301,39 @@ async function handleOAuthRequests(
 ): Promise<boolean> {
   const requestBase = requestBaseUrl(req);
   const pathname = url.pathname;
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return true;
+  }
+
+  const rateLimitPolicy = resolveRateLimitPolicy(req.method ?? "GET", pathname);
+
+  if (rateLimitPolicy) {
+    const routePolicy = resolveRoutePolicy(req.method ?? "GET", pathname);
+    const rateLimit = await acquireRateLimit(config, {
+      routeId: routePolicy.routeId,
+      principalId: "public",
+      clientKey: clientKey(req),
+      windowMs: rateLimitPolicy.windowMs,
+      maxRequests: rateLimitPolicy.maxRequests
+    });
+
+    if (!rateLimit.allowed) {
+      logSecurityDenial({
+        requestId: requestId(req),
+        routeId: routePolicy.routeId,
+        principalType: "public",
+        status: 429,
+        reason: "rate_limited",
+        method: req.method || "GET",
+        pathname
+      });
+      sendJson(res, 429, { error: "Too Many Requests" }, { "X-Request-Id": requestId(req) });
+      return true;
+    }
+  }
 
   if (
     pathname === "/.well-known/oauth-authorization-server" ||
@@ -407,7 +474,11 @@ async function handleOAuthRequests(
           codeChallenge,
           codeChallengeMethod
         }),
-        { "Cache-Control": "no-store", "X-Request-Id": requestId(req) }
+        {
+          "Cache-Control": "no-store",
+          "X-Request-Id": requestId(req),
+          "Content-Security-Policy": inlineStyleContentSecurityPolicy()
+        }
       );
       return true;
     }
@@ -647,6 +718,25 @@ function logSecurityDenial(input: {
   method: string;
   pathname: string;
 }): void {
+  const kind =
+    input.status === 429
+      ? "rate_limited"
+      : input.routeId.startsWith("oauth.")
+        ? "oauth_denied"
+        : input.routeId === "webhook.github"
+          ? "webhook_denied"
+          : "auth_denied";
+
+  recordSecuritySignal({
+    kind,
+    routeId: input.routeId,
+    reason: input.reason,
+    principalType: input.principalType,
+    status: input.status,
+    method: input.method,
+    pathname: input.pathname
+  });
+
   writeAuditEvent({
     action: input.status === 429 ? "security_rate_limited" : "security_auth_denied",
     source: "rest",
@@ -691,7 +781,8 @@ async function handleAdminStatic(req: IncomingMessage, res: ServerResponse, url:
     const body = await readFile(filePath);
     res.writeHead(200, {
       "content-type": contentTypeForFile(filePath),
-      "content-length": String(body.byteLength)
+      "content-length": String(body.byteLength),
+      "Content-Security-Policy": adminContentSecurityPolicy()
     });
 
     if (req.method === "HEAD") {
@@ -930,6 +1021,7 @@ function getCapabilities() {
     ],
     rest_paths: [
       "/api/capabilities",
+      "/api/security/posture",
       "/api/dashboard/upstream-calls",
       "/api/webhooks/github",
       "/dashboard/upstream-calls",
@@ -982,7 +1074,8 @@ function getCapabilities() {
         config.workspaceAgentTriggerId && config.workspaceAgentToken
       ),
       workspace_agent_callback_token_configured: Boolean(config.workspaceAgentCallbackToken),
-      supabase_configured: Boolean(config.supabaseUrl && config.supabaseServiceRoleKey)
+      supabase_configured: Boolean(config.supabaseUrl && config.supabaseServiceRoleKey),
+      security_posture_endpoint: "/api/security/posture"
     }
   };
 }
@@ -1106,10 +1199,13 @@ async function enforceSecurity(
   }
 
   if (securityRoute.sensitive && securityRoute.policy !== "webhook_signature") {
+    const rateLimitPolicy = resolveRateLimitPolicy(method, url.pathname);
     const rateLimit = await acquireRateLimit(config, {
       routeId: securityRoute.routeId,
       principalId: authDecision.principal.id,
-      clientKey: clientKey(req)
+      clientKey: clientKey(req),
+      windowMs: rateLimitPolicy?.windowMs,
+      maxRequests: rateLimitPolicy?.maxRequests
     });
 
     if (!rateLimit.allowed) {
@@ -1527,12 +1623,28 @@ async function handleDashboardApi(req: IncomingMessage, res: ServerResponse, url
   return false;
 }
 
+async function handleSecurityApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  if (req.method === "GET" && url.pathname === "/api/security/posture") {
+    setCorsHeaders(req, res);
+    sendJson(res, 200, buildSecurityPosture(config), {
+      "X-Request-Id": requestId(req),
+      "Cache-Control": "no-store"
+    });
+    return true;
+  }
+
+  return false;
+}
+
 async function handleRestApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
   if (req.method === "GET" && url.pathname === "/api/capabilities") {
     setCorsHeaders(req, res);
     sendJson(res, 200, getCapabilities());
     return true;
   }
+
+  const handledSecurityApi = await handleSecurityApi(req, res, url);
+  if (handledSecurityApi) return true;
 
   const handledDashboardApi = await handleDashboardApi(req, res, url);
   if (handledDashboardApi) return true;
@@ -1637,7 +1749,10 @@ const httpServer = createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/dashboard/upstream-calls") {
-    return sendHtml(res, 200, renderUpstreamDashboardHtml(), { "X-Request-Id": securityContext.requestId });
+    return sendHtml(res, 200, renderUpstreamDashboardHtml(), {
+      "X-Request-Id": securityContext.requestId,
+      "Content-Security-Policy": inlineStyleContentSecurityPolicy()
+    });
   }
 
   const handledAdminStatic = await handleAdminStatic(req, res, url);
