@@ -151,7 +151,7 @@ graph TD
   - Record any failures honestly with logs or command output.
   - _Requirements: 1, 2, 3, 4, 5_
 
-- [ ] 12. Prepare PR and CI watch
+- [~] 12. Prepare PR and CI watch
   - Commit changes to `docs/remap-ds-mcp-vercel-url`.
   - Open PR to `main`.
   - Include changed files, URL mapping, validation result, and any skipped diagnostics explanation.
