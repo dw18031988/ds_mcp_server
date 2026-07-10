@@ -102,13 +102,17 @@ export async function acquireRateLimit(
     routeId: string;
     principalId: string;
     clientKey: string;
+    windowMs?: number;
+    maxRequests?: number;
   }
 ): Promise<RateLimitDecision> {
   const key = bucketKey(input.routeId, input.principalId, input.clientKey);
+  const windowMs = input.windowMs ?? config.rateLimitWindowMs;
+  const maxRequests = input.maxRequests ?? config.rateLimitMaxRequests;
 
   if (config.securityEnforcement === "strict" && isSupabaseConfigured(config)) {
-    return supabaseAcquire(config, key, config.rateLimitWindowMs, config.rateLimitMaxRequests);
+    return supabaseAcquire(config, key, windowMs, maxRequests);
   }
 
-  return memoryAcquire(key, config.rateLimitWindowMs, config.rateLimitMaxRequests);
+  return memoryAcquire(key, windowMs, maxRequests);
 }

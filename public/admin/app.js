@@ -3,7 +3,8 @@ const TOKEN_KEY = "dw_agentops_api_token";
 const state = {
   tasks: [],
   selectedTaskId: null,
-  token: localStorage.getItem(TOKEN_KEY) || ""
+  token: localStorage.getItem(TOKEN_KEY) || "",
+  security: null
 };
 
 const elements = {
@@ -11,6 +12,9 @@ const elements = {
   saveTokenButton: document.querySelector("#saveTokenButton"),
   refreshButton: document.querySelector("#refreshButton"),
   apiStatus: document.querySelector("#apiStatus"),
+  securityStatus: document.querySelector("#securityStatus"),
+  securityControls: document.querySelector("#securityControls"),
+  securitySignals: document.querySelector("#securitySignals"),
   metrics: document.querySelector("#metrics"),
   createTaskForm: document.querySelector("#createTaskForm"),
   searchInput: document.querySelector("#searchInput"),
@@ -79,6 +83,10 @@ function pillClass(stateValue) {
   return "muted";
 }
 
+function statusClass(configured) {
+  return configured ? "ok" : "warn";
+}
+
 function showToast(message, isError = false) {
   elements.toast.textContent = message;
   elements.toast.hidden = false;
@@ -123,6 +131,53 @@ function renderMetrics() {
       <span>${label}</span>
     </div>
   `).join("");
+}
+
+function renderSecurity() {
+  const posture = state.security;
+  if (!posture) {
+    elements.securityStatus.textContent = "loading";
+    elements.securityControls.innerHTML = "";
+    elements.securitySignals.innerHTML = "";
+    return;
+  }
+
+  const controls = posture.controls || [];
+  const signals = posture.signals || { total: 0, by_kind: {}, recent: [] };
+
+  elements.securityStatus.textContent = posture.summary?.enforcement || "unknown";
+  elements.securityStatus.className = `pill ${posture.summary?.enforcement === "strict" ? "ok" : "warn"}`;
+
+  elements.securityControls.innerHTML = controls.map((control) => `
+    <div class="security-control">
+      <div>
+        <strong>${escapeHtml(control.name)}</strong><br />
+        <span>${escapeHtml(control.detail || "")}</span>
+      </div>
+      <span class="pill ${statusClass(control.configured)}">${control.configured ? "on" : "off"}</span>
+    </div>
+  `).join("");
+
+  const byKind = signals.by_kind || {};
+  const recent = signals.recent || [];
+  elements.securitySignals.innerHTML = `
+    <div class="security-signal">
+      <strong>Signals</strong><br />
+      <span>Total: ${escapeHtml(signals.total ?? 0)}</span>
+    </div>
+    <div class="security-signal">
+      <strong>Auth denials</strong><br />
+      <span>${escapeHtml(byKind.auth_denied ?? 0)}</span>
+    </div>
+    <div class="security-signal">
+      <strong>Rate limits</strong><br />
+      <span>${escapeHtml(byKind.rate_limited ?? 0)}</span>
+    </div>
+    <div class="security-signal">
+      <strong>Recent</strong><br />
+      <span>${recent.length ? escapeHtml(recent[0].kind + " · " + recent[0].timestamp) : "none"}</span>
+    </div>
+  `;
 }
 
 function renderTasks() {
@@ -270,6 +325,11 @@ async function loadCapabilities() {
   elements.apiStatus.className = `pill ${capabilities.auth?.supabase_configured ? "ok" : "warn"}`;
 }
 
+async function loadSecurity() {
+  state.security = await request("/api/security/posture");
+  renderSecurity();
+}
+
 async function loadTasks() {
   const response = await request("/api/tasks");
   state.tasks = response.tasks || [];
@@ -279,7 +339,7 @@ async function loadTasks() {
 
 async function refreshAll() {
   try {
-    await Promise.all([loadCapabilities(), loadTasks()]);
+    await Promise.all([loadCapabilities(), loadSecurity(), loadTasks()]);
     if (state.selectedTaskId) await selectTask(state.selectedTaskId);
   } catch (error) {
     showToast(error.message, true);

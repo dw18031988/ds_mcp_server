@@ -42,7 +42,20 @@ import { handleAgentOpsRestApi } from "./agentops/router.js";
 import { handleGitHubUploadRestApi } from "./githubUploadRouter.js";
 import { acquireRateLimit } from "./security/rateLimit.js";
 import { authorizeRoute } from "./security/auth.js";
-import { resolveRoutePolicy } from "./security/routePolicy.js";
+import { buildSecurityPosture } from "./security/posture.js";
+import { recordSecuritySignal } from "./security/monitoring.js";
+import {
+  buildOAuthMetadataJson,
+  buildOAuthProtectedResourceJson,
+  createOAuthAuthorizationCode,
+  exchangeOAuthAuthorizationCode,
+  getOAuthClientRecord,
+  parseOAuthBasicClientAuth,
+  revokeOAuthToken,
+  registerOAuthClient,
+  refreshOAuthAccessToken
+} from "./security/oauth.js";
+import { resolveRateLimitPolicy, resolveRoutePolicy } from "./security/routePolicy.js";
 import {
   formatSecurityStartupError,
   validateSecurityStartup
@@ -120,6 +133,38 @@ function setSecurityHeaders(res: ServerResponse): void {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+
+  if (config.runtimeMode === "production" || config.securityEnforcement === "strict") {
+    res.setHeader("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+  }
+}
+
+function adminContentSecurityPolicy(): string {
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "img-src 'self' data:",
+    "script-src 'self'",
+    "style-src 'self'"
+  ].join("; ");
+}
+
+function inlineStyleContentSecurityPolicy(): string {
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "img-src 'self' data:",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "connect-src 'self' https://*.supabase.co"
+  ].join("; ");
 }
 
 function firstHeader(value: string | string[] | undefined): string | undefined {
@@ -159,6 +204,459 @@ function isMcpRequestPath(mcpPath: string, pathname: string): boolean {
   const normalizedMcpPath = normalizeMcpPath(mcpPath);
   if (pathname === normalizedMcpPath) return true;
   return mcpUrlSecretFromPathname(normalizedMcpPath, pathname) !== undefined;
+}
+
+async function readFormBody(
+  req: IncomingMessage,
+  maxBytes = config.maxJsonBodyBytes
+): Promise<Record<string, string>> {
+  const rawBody = (await readRawBodyWithLimit(req, maxBytes)).toString("utf8");
+  const form = new URLSearchParams(rawBody);
+  const result: Record<string, string> = {};
+  for (const [key, value] of form.entries()) {
+    result[key] = value;
+  }
+  return result;
+}
+
+function oauthErrorResponse(
+  req: IncomingMessage,
+  res: ServerResponse,
+  statusCode: number,
+  error: string,
+  description?: string
+): void {
+  const requestIdValue = requestId(req);
+  sendJson(
+    res,
+    statusCode,
+    {
+      error,
+      error_description: description,
+      request_id: requestIdValue
+    },
+    { "X-Request-Id": requestIdValue }
+  );
+}
+
+function renderOAuthConsentPage(input: {
+  clientName: string;
+  clientId: string;
+  redirectUri: string;
+  scope: string;
+  state?: string;
+  codeChallenge: string;
+  codeChallengeMethod: string;
+}): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Authorize ${escapeHtml(input.clientName)}</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 0; padding: 32px; background: #0b0f19; color: #e5e7eb; }
+      .card { max-width: 640px; margin: 0 auto; background: #111827; border: 1px solid #243045; border-radius: 16px; padding: 28px; }
+      .muted { color: #9ca3af; }
+      .meta { background: #0f172a; border: 1px solid #243045; border-radius: 12px; padding: 12px 16px; margin: 16px 0; word-break: break-all; }
+      .actions { display: flex; gap: 12px; margin-top: 24px; }
+      button { border: 0; border-radius: 999px; padding: 12px 20px; font-weight: 600; cursor: pointer; }
+      .primary { background: #22c55e; color: #04120a; }
+      .secondary { background: #243045; color: #e5e7eb; }
+      code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+      form { margin: 0; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>Authorize ${escapeHtml(input.clientName)}</h1>
+      <p class="muted">Allow this connector to access the DS MCP server.</p>
+      <div class="meta">
+        <div><strong>Client ID:</strong> <code>${escapeHtml(input.clientId)}</code></div>
+        <div><strong>Redirect URI:</strong> <code>${escapeHtml(input.redirectUri)}</code></div>
+        <div><strong>Scope:</strong> <code>${escapeHtml(input.scope)}</code></div>
+      </div>
+      <form method="post" action="/oauth/authorize">
+        <input type="hidden" name="client_id" value="${escapeHtml(input.clientId)}" />
+        <input type="hidden" name="redirect_uri" value="${escapeHtml(input.redirectUri)}" />
+        <input type="hidden" name="scope" value="${escapeHtml(input.scope)}" />
+        <input type="hidden" name="code_challenge" value="${escapeHtml(input.codeChallenge)}" />
+        <input type="hidden" name="code_challenge_method" value="${escapeHtml(input.codeChallengeMethod)}" />
+        ${input.state ? `<input type="hidden" name="state" value="${escapeHtml(input.state)}" />` : ""}
+        <input type="hidden" name="action" value="approve" />
+        <div class="actions">
+          <button class="primary" type="submit">Authorize</button>
+          <button class="secondary" type="submit" formaction="/oauth/authorize" formmethod="post" name="action" value="deny">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </body>
+</html>`;
+}
+
+async function handleOAuthRequests(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL
+): Promise<boolean> {
+  const requestBase = requestBaseUrl(req);
+  const pathname = url.pathname;
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return true;
+  }
+
+  const rateLimitPolicy = resolveRateLimitPolicy(req.method ?? "GET", pathname);
+
+  if (rateLimitPolicy) {
+    const routePolicy = resolveRoutePolicy(req.method ?? "GET", pathname);
+    const rateLimit = await acquireRateLimit(config, {
+      routeId: routePolicy.routeId,
+      principalId: "public",
+      clientKey: clientKey(req),
+      windowMs: rateLimitPolicy.windowMs,
+      maxRequests: rateLimitPolicy.maxRequests
+    });
+
+    if (!rateLimit.allowed) {
+      logSecurityDenial({
+        requestId: requestId(req),
+        routeId: routePolicy.routeId,
+        principalType: "public",
+        status: 429,
+        reason: "rate_limited",
+        method: req.method || "GET",
+        pathname
+      });
+      sendJson(res, 429, { error: "Too Many Requests" }, { "X-Request-Id": requestId(req) });
+      return true;
+    }
+  }
+
+  if (
+    pathname === "/.well-known/oauth-authorization-server" ||
+    pathname === "/.well-known/openid-configuration"
+  ) {
+    sendJson(
+      res,
+      200,
+      buildOAuthMetadataJson(config, requestBase),
+      { "Cache-Control": "no-store", "X-Request-Id": requestId(req) }
+    );
+    return true;
+  }
+
+  if (pathname === "/.well-known/oauth-protected-resource") {
+    sendJson(
+      res,
+      200,
+      buildOAuthProtectedResourceJson(config, requestBase),
+      { "Cache-Control": "no-store", "X-Request-Id": requestId(req) }
+    );
+    return true;
+  }
+
+  if (pathname === "/oauth/register") {
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return true;
+    }
+
+    if (req.method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" }, { "X-Request-Id": requestId(req) });
+      return true;
+    }
+
+    try {
+      const raw = (await readJsonBody(req)) as {
+        client_name?: string;
+        redirect_uris?: string[];
+        grant_types?: string[];
+        response_types?: string[];
+        token_endpoint_auth_method?: string;
+      };
+
+      const registration = await registerOAuthClient(config, raw);
+      sendJson(
+        res,
+        201,
+        {
+          client_id: registration.client_id,
+          client_secret: registration.client_secret,
+          client_id_issued_at: Math.floor(Date.now() / 1000),
+          client_secret_expires_at: registration.client_secret ? 0 : undefined,
+          token_endpoint_auth_method: registration.token_endpoint_auth_method
+        },
+        { "Cache-Control": "no-store", "X-Request-Id": requestId(req) }
+      );
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "invalid_client_metadata";
+      sendJson(
+        res,
+        400,
+        { error: "invalid_client_metadata", error_description: message },
+        { "Cache-Control": "no-store", "X-Request-Id": requestId(req) }
+      );
+      return true;
+    }
+  }
+
+  if (pathname === "/oauth/authorize") {
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return true;
+    }
+
+    if (!req.method || !["GET", "POST"].includes(req.method)) {
+      sendJson(res, 405, { error: "Method not allowed" }, { "X-Request-Id": requestId(req) });
+      return true;
+    }
+
+    const params =
+      req.method === "GET"
+        ? Object.fromEntries(url.searchParams.entries())
+        : await readFormBody(req);
+
+    const responseType = (params.response_type || "code").trim();
+    const clientId = (params.client_id || "").trim();
+    const redirectUri = (params.redirect_uri || "").trim();
+    const scope = (params.scope || "mcp").trim();
+    const codeChallenge = (params.code_challenge || "").trim();
+    const codeChallengeMethod = (params.code_challenge_method || "S256").trim();
+    const state = (params.state || "").trim() || undefined;
+
+    if (responseType !== "code" || !clientId || !redirectUri || !codeChallenge) {
+      sendJson(
+        res,
+        400,
+        { error: "invalid_request", error_description: "Missing OAuth parameters" },
+        { "Cache-Control": "no-store", "X-Request-Id": requestId(req) }
+      );
+      return true;
+    }
+
+    const client = await getOAuthClientRecord(config, clientId);
+    if (!client || client.revoked_at) {
+      sendJson(
+        res,
+        400,
+        { error: "invalid_client", error_description: "Unknown OAuth client" },
+        { "Cache-Control": "no-store", "X-Request-Id": requestId(req) }
+      );
+      return true;
+    }
+
+    if (!client.redirect_uris.includes(redirectUri)) {
+      sendJson(
+        res,
+        400,
+        { error: "invalid_request", error_description: "redirect_uri_mismatch" },
+        { "Cache-Control": "no-store", "X-Request-Id": requestId(req) }
+      );
+      return true;
+    }
+
+    if (req.method === "GET") {
+      sendHtml(
+        res,
+        200,
+        renderOAuthConsentPage({
+          clientName: client.client_name,
+          clientId,
+          redirectUri,
+          scope,
+          state,
+          codeChallenge,
+          codeChallengeMethod
+        }),
+        {
+          "Cache-Control": "no-store",
+          "X-Request-Id": requestId(req),
+          "Content-Security-Policy": inlineStyleContentSecurityPolicy()
+        }
+      );
+      return true;
+    }
+
+    const action = ((params.action || params.approve || "approve") as string).trim().toLowerCase();
+    if (action === "deny" || action === "cancel") {
+      const denied = new URL(redirectUri);
+      denied.searchParams.set("error", "access_denied");
+      if (state) denied.searchParams.set("state", state);
+      res.writeHead(302, {
+        Location: denied.toString(),
+        "Cache-Control": "no-store",
+        "X-Request-Id": requestId(req)
+      });
+      res.end();
+      return true;
+    }
+
+    try {
+      const authorizationCode = await createOAuthAuthorizationCode(config, {
+        clientId,
+        redirectUri,
+        scope,
+        codeChallenge,
+        codeChallengeMethod,
+        state
+      });
+
+      const approved = new URL(redirectUri);
+      approved.searchParams.set("code", authorizationCode.code);
+      if (state) approved.searchParams.set("state", state);
+
+      res.writeHead(302, {
+        Location: approved.toString(),
+        "Cache-Control": "no-store",
+        "X-Request-Id": requestId(req)
+      });
+      res.end();
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "invalid_request";
+      sendJson(
+        res,
+        400,
+        { error: "invalid_request", error_description: message },
+        { "Cache-Control": "no-store", "X-Request-Id": requestId(req) }
+      );
+      return true;
+    }
+  }
+
+  if (pathname === "/oauth/token") {
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return true;
+    }
+
+    if (req.method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" }, { "X-Request-Id": requestId(req) });
+      return true;
+    }
+
+    const form = await readFormBody(req);
+    const basicClient = parseOAuthBasicClientAuth(firstHeader(req.headers.authorization));
+    const clientId = form.client_id || basicClient?.client_id;
+    const clientSecret = form.client_secret || basicClient?.client_secret;
+
+    if (basicClient && form.client_id && basicClient.client_id !== form.client_id) {
+      sendJson(
+        res,
+        401,
+        { error: "invalid_client" },
+        { "Cache-Control": "no-store", "X-Request-Id": requestId(req) }
+      );
+      return true;
+    }
+
+    if (!clientId) {
+      sendJson(
+        res,
+        401,
+        { error: "invalid_client" },
+        { "Cache-Control": "no-store", "X-Request-Id": requestId(req) }
+      );
+      return true;
+    }
+
+    const grantType = (form.grant_type || "").trim();
+    let result;
+
+    if (grantType === "authorization_code") {
+      result = await exchangeOAuthAuthorizationCode(config, {
+        clientId,
+        clientSecret,
+        code: (form.code || "").trim(),
+        redirectUri: (form.redirect_uri || "").trim(),
+        codeVerifier: (form.code_verifier || "").trim()
+      });
+    } else if (grantType === "refresh_token") {
+      result = await refreshOAuthAccessToken(config, {
+        clientId,
+        clientSecret,
+        refreshToken: (form.refresh_token || "").trim()
+      });
+    } else {
+      sendJson(
+        res,
+        400,
+        { error: "unsupported_grant_type" },
+        { "Cache-Control": "no-store", "X-Request-Id": requestId(req) }
+      );
+      return true;
+    }
+
+    if (!result.ok) {
+      sendJson(
+        res,
+        result.error === "invalid_client" ? 401 : 400,
+        {
+          error: result.error,
+          error_description: result.error_description
+        },
+        { "Cache-Control": "no-store", "X-Request-Id": requestId(req) }
+      );
+      return true;
+    }
+
+    sendJson(
+      res,
+      200,
+      {
+        access_token: result.access_token,
+        token_type: result.token_type,
+        expires_in: result.expires_in,
+        refresh_token: result.refresh_token,
+        scope: result.scope
+      },
+      {
+        "Cache-Control": "no-store",
+        Pragma: "no-cache",
+        "X-Request-Id": requestId(req)
+      }
+    );
+    return true;
+  }
+
+  if (pathname === "/oauth/revoke") {
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return true;
+    }
+
+    if (req.method !== "POST") {
+      sendJson(res, 405, { error: "Method not allowed" }, { "X-Request-Id": requestId(req) });
+      return true;
+    }
+
+    const form = await readFormBody(req);
+    const token = (form.token || "").trim();
+    if (token) {
+      try {
+        await revokeOAuthToken(config, token);
+      } catch (error) {
+        console.error("OAuth token revocation failed", error);
+      }
+    }
+
+    res.writeHead(200, {
+      "Cache-Control": "no-store",
+      "X-Request-Id": requestId(req)
+    });
+    res.end();
+    return true;
+  }
+
+  return false;
 }
 
 function requestId(req: IncomingMessage): string {
@@ -220,6 +718,25 @@ function logSecurityDenial(input: {
   method: string;
   pathname: string;
 }): void {
+  const kind =
+    input.status === 429
+      ? "rate_limited"
+      : input.routeId.startsWith("oauth.")
+        ? "oauth_denied"
+        : input.routeId === "webhook.github"
+          ? "webhook_denied"
+          : "auth_denied";
+
+  recordSecuritySignal({
+    kind,
+    routeId: input.routeId,
+    reason: input.reason,
+    principalType: input.principalType,
+    status: input.status,
+    method: input.method,
+    pathname: input.pathname
+  });
+
   writeAuditEvent({
     action: input.status === 429 ? "security_rate_limited" : "security_auth_denied",
     source: "rest",
@@ -264,7 +781,8 @@ async function handleAdminStatic(req: IncomingMessage, res: ServerResponse, url:
     const body = await readFile(filePath);
     res.writeHead(200, {
       "content-type": contentTypeForFile(filePath),
-      "content-length": String(body.byteLength)
+      "content-length": String(body.byteLength),
+      "Content-Security-Policy": adminContentSecurityPolicy()
     });
 
     if (req.method === "HEAD") {
@@ -503,6 +1021,7 @@ function getCapabilities() {
     ],
     rest_paths: [
       "/api/capabilities",
+      "/api/security/posture",
       "/api/dashboard/upstream-calls",
       "/api/webhooks/github",
       "/dashboard/upstream-calls",
@@ -545,14 +1064,18 @@ function getCapabilities() {
     auth: {
       mcp_bearer_token_configured: Boolean(config.mcpBearerToken),
       mcp_url_secret_configured: Boolean(config.mcpUrlSecret),
-      rest_api_bearer_token_configured: Boolean(config.restApiBearerToken),
+      mcp_oauth_configured: Boolean(
+        config.publicBaseUrl && config.supabaseUrl && config.supabaseServiceRoleKey
+      ),
+      rest_api_bearer_token_configured: Boolean(config.restApiBearerToken),    
       github_token_configured: Boolean(config.githubToken),
       github_webhook_secret_configured: Boolean(config.githubWebhookSecret),
       workspace_agent_trigger_configured: Boolean(
         config.workspaceAgentTriggerId && config.workspaceAgentToken
       ),
       workspace_agent_callback_token_configured: Boolean(config.workspaceAgentCallbackToken),
-      supabase_configured: Boolean(config.supabaseUrl && config.supabaseServiceRoleKey)
+      supabase_configured: Boolean(config.supabaseUrl && config.supabaseServiceRoleKey),
+      security_posture_endpoint: "/api/security/posture"
     }
   };
 }
@@ -660,7 +1183,7 @@ async function enforceSecurity(
     return null;
   }
 
-  const authDecision = authorizeRoute(config, securityRoute.policy, req);
+  const authDecision = await authorizeRoute(config, securityRoute.policy, req);
   if (!authDecision.ok) {
     logSecurityDenial({
       requestId: requestIdValue,
@@ -676,10 +1199,13 @@ async function enforceSecurity(
   }
 
   if (securityRoute.sensitive && securityRoute.policy !== "webhook_signature") {
+    const rateLimitPolicy = resolveRateLimitPolicy(method, url.pathname);
     const rateLimit = await acquireRateLimit(config, {
       routeId: securityRoute.routeId,
       principalId: authDecision.principal.id,
-      clientKey: clientKey(req)
+      clientKey: clientKey(req),
+      windowMs: rateLimitPolicy?.windowMs,
+      maxRequests: rateLimitPolicy?.maxRequests
     });
 
     if (!rateLimit.allowed) {
@@ -1097,12 +1623,28 @@ async function handleDashboardApi(req: IncomingMessage, res: ServerResponse, url
   return false;
 }
 
+async function handleSecurityApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  if (req.method === "GET" && url.pathname === "/api/security/posture") {
+    setCorsHeaders(req, res);
+    sendJson(res, 200, buildSecurityPosture(config), {
+      "X-Request-Id": requestId(req),
+      "Cache-Control": "no-store"
+    });
+    return true;
+  }
+
+  return false;
+}
+
 async function handleRestApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
   if (req.method === "GET" && url.pathname === "/api/capabilities") {
     setCorsHeaders(req, res);
     sendJson(res, 200, getCapabilities());
     return true;
   }
+
+  const handledSecurityApi = await handleSecurityApi(req, res, url);
+  if (handledSecurityApi) return true;
 
   const handledDashboardApi = await handleDashboardApi(req, res, url);
   if (handledDashboardApi) return true;
@@ -1207,7 +1749,10 @@ const httpServer = createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/dashboard/upstream-calls") {
-    return sendHtml(res, 200, renderUpstreamDashboardHtml(), { "X-Request-Id": securityContext.requestId });
+    return sendHtml(res, 200, renderUpstreamDashboardHtml(), {
+      "X-Request-Id": securityContext.requestId,
+      "Content-Security-Policy": inlineStyleContentSecurityPolicy()
+    });
   }
 
   const handledAdminStatic = await handleAdminStatic(req, res, url);
@@ -1215,6 +1760,9 @@ const httpServer = createServer(async (req, res) => {
 
   const handledWorkspaceAgentCallback = await handleWorkspaceAgentCallback(req, res, url);
   if (handledWorkspaceAgentCallback) return;
+
+  const handledOAuth = await handleOAuthRequests(req, res, url);
+  if (handledOAuth) return;
 
   const handledRestApi = await handleRestApi(req, res, url);
   if (handledRestApi) return;
