@@ -6,7 +6,8 @@ This phase adds safety and production-readiness controls around the Design Syste
 
 - Optional REST API bearer auth using `REST_API_BEARER_TOKEN`.
 - Public capability endpoint at `GET /api/capabilities
-GET /api/diagnostics/url-map`.
+GET /api/diagnostics/url-map
+POST /api/webhooks/github`.
 - Zod validation for GitHub REST write payloads.
 - Audit log events for REST and MCP write actions.
 - Service version bump to `0.3.0`.
@@ -28,7 +29,7 @@ Exception:
 GET /api/capabilities
 ```
 
-These endpoints stay public for connector/tool debugging and do not expose secrets.
+Capabilities and diagnostics stay public for connector/tool debugging and do not expose secrets. The GitHub webhook endpoint bypasses REST bearer auth because GitHub signs requests with `X-Hub-Signature-256` instead.
 
 ## Capability and URL diagnostics checks
 
