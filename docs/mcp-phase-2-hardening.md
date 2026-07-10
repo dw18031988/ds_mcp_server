@@ -5,7 +5,8 @@ This phase adds safety and production-readiness controls around the Design Syste
 ## Changes
 
 - Optional REST API bearer auth using `REST_API_BEARER_TOKEN`.
-- Public capability endpoint at `GET /api/capabilities`.
+- Public capability endpoint at `GET /api/capabilities
+GET /api/diagnostics/url-map`.
 - Zod validation for GitHub REST write payloads.
 - Audit log events for REST and MCP write actions.
 - Service version bump to `0.3.0`.
@@ -27,12 +28,13 @@ Exception:
 GET /api/capabilities
 ```
 
-This endpoint stays public for connector/tool debugging and does not expose secrets.
+These endpoints stay public for connector/tool debugging and do not expose secrets.
 
-## Capability check
+## Capability and URL diagnostics checks
 
 ```bash
 curl https://ds-mcp-server-one.vercel.app/api/capabilities
+curl https://ds-mcp-server-one.vercel.app/api/diagnostics/url-map
 ```
 
 Expected fields:
