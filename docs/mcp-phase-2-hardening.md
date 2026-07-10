@@ -32,7 +32,7 @@ This endpoint stays public for connector/tool debugging and does not expose secr
 ## Capability check
 
 ```bash
-curl https://ds-mcp-server-theta.vercel.app/api/capabilities
+curl https://ds-mcp-server-one.vercel.app/api/capabilities
 ```
 
 Expected fields:
