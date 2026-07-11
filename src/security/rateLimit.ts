@@ -11,6 +11,7 @@ export type RateLimitDecision =
   | { allowed: false; retryAfterSeconds: number; limit: number; count: number; backend: "memory" | "supabase" };
 
 const inMemoryBuckets = new Map<string, RateLimitState>();
+let loggedLocalFallbackWarning = false;
 
 function nowMs(): number {
   return Date.now();
@@ -68,7 +69,20 @@ async function supabaseAcquire(
   });
 
   if (error) {
-    throw new Error(`Security rate limit RPC failed: ${error.message}`);
+    const message = error.message || "unknown error";
+    const missingRpc = /could not find the function|schema cache|does not exist|security_rate_limit_acquire/i.test(message);
+
+    if (missingRpc && config.runtimeMode !== "production") {
+      if (!loggedLocalFallbackWarning) {
+        loggedLocalFallbackWarning = true;
+        console.warn(
+          "Security rate limit RPC is missing; falling back to in-memory rate limiting in local/runtime mode."
+        );
+      }
+      return memoryAcquire(key, windowMs, maxRequests);
+    }
+
+    throw new Error(`Security rate limit RPC failed: ${message}`);
   }
 
   const row = Array.isArray(data) ? data[0] : data;

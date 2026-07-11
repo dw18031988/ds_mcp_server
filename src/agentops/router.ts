@@ -19,6 +19,7 @@ import {
   deleteTask,
   deleteTaskLink,
   getTask,
+  listAllTaskLinks,
   listTaskEvents,
   listTaskLinks,
   listTasks,
@@ -439,6 +440,11 @@ export async function handleAgentOpsRestApi(
 
     if (req.method === "GET" && url.pathname === "/api/tasks") {
       sendJson(res, 200, { ok: true, tasks: await listTasks(config) });
+      return true;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/task-links") {
+      sendJson(res, 200, { ok: true, links: await listAllTaskLinks(config, queryLimit(url, 1000)) });
       return true;
     }
 

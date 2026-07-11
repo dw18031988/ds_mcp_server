@@ -1,5 +1,66 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 export type RuntimeMode = "local" | "development" | "staging" | "production";
 export type SecurityEnforcement = "relaxed" | "strict";
+
+function parseEnvFile(contents: string): Record<string, string> {
+  const output: Record<string, string> = {};
+
+  for (const rawLine of contents.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+
+    const assignment = line.startsWith("export ") ? line.slice(7).trim() : line;
+    const equalsIndex = assignment.indexOf("=");
+    if (equalsIndex <= 0) continue;
+
+    const key = assignment.slice(0, equalsIndex).trim();
+    let value = assignment.slice(equalsIndex + 1).trim();
+
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    if (key) {
+      output[key] = value;
+    }
+  }
+
+  return output;
+}
+
+function loadEnvFile(filePath: string): void {
+  if (!existsSync(filePath)) return;
+
+  const parsed = parseEnvFile(readFileSync(filePath, "utf8"));
+  for (const [key, value] of Object.entries(parsed)) {
+    if (process.env[key] === undefined || process.env[key] === "") {
+      process.env[key] = value;
+    }
+  }
+}
+
+function loadLocalEnvFiles(): void {
+  const cwd = resolve(process.cwd());
+  loadEnvFile(resolve(cwd, ".env"));
+  loadEnvFile(resolve(cwd, ".env.local"));
+}
+
+loadLocalEnvFiles();
+
+function appEnv(name: string): string | undefined {
+  const prefixed = process.env[`DS_MCP_${name}`];
+  if (prefixed !== undefined && prefixed !== "") return prefixed;
+
+  const legacy = process.env[name];
+  if (legacy !== undefined && legacy !== "") return legacy;
+
+  return undefined;
+}
 
 export type DatabaseProfile = {
   target: string;
@@ -127,31 +188,31 @@ function databaseProfile(
 
 function createDatabaseProfiles(): Record<string, DatabaseProfile> {
   return {
-    default: databaseProfile("default", process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY),
+    default: databaseProfile("default", appEnv("SUPABASE_URL"), appEnv("SUPABASE_SERVICE_ROLE_KEY")),
     real: databaseProfile(
       "real",
-      process.env.SUPABASE_REAL_URL || process.env.SUPABASE_URL,
-      process.env.SUPABASE_REAL_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
+      appEnv("SUPABASE_REAL_URL") || appEnv("SUPABASE_URL"),
+      appEnv("SUPABASE_REAL_SERVICE_ROLE_KEY") || appEnv("SUPABASE_SERVICE_ROLE_KEY")
     ),
     local: databaseProfile(
       "local",
-      process.env.SUPABASE_LOCAL_URL,
-      process.env.SUPABASE_LOCAL_SERVICE_ROLE_KEY
+      appEnv("SUPABASE_LOCAL_URL"),
+      appEnv("SUPABASE_LOCAL_SERVICE_ROLE_KEY")
     ),
     development: databaseProfile(
       "development",
-      process.env.SUPABASE_DEVELOPMENT_URL,
-      process.env.SUPABASE_DEVELOPMENT_SERVICE_ROLE_KEY
+      appEnv("SUPABASE_DEVELOPMENT_URL"),
+      appEnv("SUPABASE_DEVELOPMENT_SERVICE_ROLE_KEY")
     ),
     staging: databaseProfile(
       "staging",
-      process.env.SUPABASE_STAGING_URL,
-      process.env.SUPABASE_STAGING_SERVICE_ROLE_KEY
+      appEnv("SUPABASE_STAGING_URL"),
+      appEnv("SUPABASE_STAGING_SERVICE_ROLE_KEY")
     ),
     production: databaseProfile(
       "production",
-      process.env.SUPABASE_PRODUCTION_URL,
-      process.env.SUPABASE_PRODUCTION_SERVICE_ROLE_KEY
+      appEnv("SUPABASE_PRODUCTION_URL"),
+      appEnv("SUPABASE_PRODUCTION_SERVICE_ROLE_KEY")
     )
   };
 }
@@ -165,53 +226,53 @@ function activeDatabaseProfile(
 
 export function loadConfig(): AppConfig {
   const databaseProfiles = createDatabaseProfiles();
-  const activeDbTarget = process.env.SUPABASE_ACTIVE_DB_TARGET || process.env.DB_TARGET || "default";
+  const activeDbTarget = appEnv("SUPABASE_ACTIVE_DB_TARGET") || appEnv("DB_TARGET") || "default";
   const activeProfile = activeDatabaseProfile(databaseProfiles, activeDbTarget);
-  const securityEnforcement = readSecurityEnforcement(process.env.SECURITY_ENFORCEMENT);
-  const corsAllowedOrigins = readOrigins(process.env.CORS_ALLOWED_ORIGINS);
+  const securityEnforcement = readSecurityEnforcement(appEnv("SECURITY_ENFORCEMENT"));
+  const corsAllowedOrigins = readOrigins(appEnv("CORS_ALLOWED_ORIGINS"));
   const vercelUrl = process.env.VERCEL_URL?.trim();
 
   return {
-    port: readPort(process.env.PORT),
-    mcpPath: process.env.MCP_PATH || "/mcp",
-    mcpBearerToken: process.env.MCP_BEARER_TOKEN || undefined,
-    mcpUrlSecret: process.env.MCP_URL_SECRET || undefined,
-    restApiBearerToken: process.env.REST_API_BEARER_TOKEN || undefined,
-    designSystemBackendUrl: process.env.DS_BACKEND_URL || undefined,
-    internalAgentResultToken: process.env.INTERNAL_AGENT_RESULT_TOKEN || undefined,
-    githubToken: process.env.GITHUB_TOKEN || undefined,
-    githubWebhookSecret: process.env.GITHUB_WEBHOOK_SECRET || undefined,
-    githubAllowedRepos: readCsv(process.env.GITHUB_ALLOWED_REPOS),
-    githubDefaultBaseBranch: process.env.GITHUB_DEFAULT_BASE_BRANCH || "main",
-    githubAllowedBranchPrefixes: readCsv(process.env.GITHUB_ALLOWED_BRANCH_PREFIXES, [
+    port: readPort(appEnv("PORT")),
+    mcpPath: appEnv("MCP_PATH") || "/mcp",
+    mcpBearerToken: appEnv("MCP_BEARER_TOKEN") || undefined,
+    mcpUrlSecret: appEnv("MCP_URL_SECRET") || undefined,
+    restApiBearerToken: appEnv("REST_API_BEARER_TOKEN") || undefined,
+    designSystemBackendUrl: appEnv("DS_BACKEND_URL") || undefined,
+    internalAgentResultToken: appEnv("INTERNAL_AGENT_RESULT_TOKEN") || undefined,
+    githubToken: appEnv("GITHUB_TOKEN") || undefined,
+    githubWebhookSecret: appEnv("GITHUB_WEBHOOK_SECRET") || undefined,
+    githubAllowedRepos: readCsv(appEnv("GITHUB_ALLOWED_REPOS")),
+    githubDefaultBaseBranch: appEnv("GITHUB_DEFAULT_BASE_BRANCH") || "main",
+    githubAllowedBranchPrefixes: readCsv(appEnv("GITHUB_ALLOWED_BRANCH_PREFIXES"), [
       "feature/",
       "fix/",
       "chore/",
       "docs/",
       "ai/"
     ]),
-    githubMaxFileBytes: readPositiveInteger(process.env.GITHUB_MAX_FILE_BYTES, 1_048_576),
-    dsUploadSessionTtlSeconds: readPositiveInteger(process.env.DS_UPLOAD_SESSION_TTL_SECONDS, 3600),
-    dsUploadChunkMaxBytes: readPositiveInteger(process.env.DS_UPLOAD_CHUNK_MAX_BYTES, 1_048_576),
-    dsUploadMaxFileBytes: readPositiveInteger(process.env.DS_UPLOAD_MAX_FILE_BYTES, 10_485_760),
-    dsUploadStorage: process.env.DS_UPLOAD_STORAGE || "memory",
-    workspaceAgentTriggerId: process.env.WORKSPACE_AGENT_TRIGGER_ID || undefined,
-    workspaceAgentToken: process.env.WORKSPACE_AGENT_TOKEN || undefined,
-    workspaceAgentCallbackToken: process.env.WORKSPACE_AGENT_CALLBACK_TOKEN || undefined,
+    githubMaxFileBytes: readPositiveInteger(appEnv("GITHUB_MAX_FILE_BYTES"), 1_048_576),
+    dsUploadSessionTtlSeconds: readPositiveInteger(appEnv("DS_UPLOAD_SESSION_TTL_SECONDS"), 3600),
+    dsUploadChunkMaxBytes: readPositiveInteger(appEnv("DS_UPLOAD_CHUNK_MAX_BYTES"), 1_048_576),
+    dsUploadMaxFileBytes: readPositiveInteger(appEnv("DS_UPLOAD_MAX_FILE_BYTES"), 10_485_760),
+    dsUploadStorage: appEnv("DS_UPLOAD_STORAGE") || "memory",
+    workspaceAgentTriggerId: appEnv("WORKSPACE_AGENT_TRIGGER_ID") || undefined,
+    workspaceAgentToken: appEnv("WORKSPACE_AGENT_TOKEN") || undefined,
+    workspaceAgentCallbackToken: appEnv("WORKSPACE_AGENT_CALLBACK_TOKEN") || undefined,
     workspaceAgentApiBaseUrl:
-      process.env.WORKSPACE_AGENT_API_BASE_URL || "https://api.chatgpt.com",
-    publicBaseUrl: process.env.PUBLIC_BASE_URL || (vercelUrl ? `https://${vercelUrl}` : undefined),
+      appEnv("WORKSPACE_AGENT_API_BASE_URL") || "https://api.chatgpt.com",
+    publicBaseUrl: appEnv("PUBLIC_BASE_URL") || (vercelUrl ? `https://${vercelUrl}` : undefined),
     supabaseUrl: activeProfile.supabaseUrl,
     supabaseServiceRoleKey: activeProfile.supabaseServiceRoleKey,
-    runtimeMode: readRuntimeMode(process.env.APP_RUNTIME_MODE),
+    runtimeMode: readRuntimeMode(appEnv("APP_RUNTIME_MODE")),
     securityEnforcement,
     corsAllowedOrigins,
-    maxJsonBodyBytes: readPositiveInteger(process.env.MAX_JSON_BODY_BYTES, 1_048_576),
-    rateLimitWindowMs: readPositiveInteger(process.env.RATE_LIMIT_WINDOW_MS, 60_000),
-    rateLimitMaxRequests: readPositiveInteger(process.env.RATE_LIMIT_MAX_REQUESTS, 120),
+    maxJsonBodyBytes: readPositiveInteger(appEnv("MAX_JSON_BODY_BYTES"), 1_048_576),
+    rateLimitWindowMs: readPositiveInteger(appEnv("RATE_LIMIT_WINDOW_MS"), 60_000),
+    rateLimitMaxRequests: readPositiveInteger(appEnv("RATE_LIMIT_MAX_REQUESTS"), 120),
     activeDbTarget,
-    devToolsEnabled: readBoolean(process.env.DEV_TOOLS_ENABLED),
-    devToolsAllowRealDbSwitch: readBoolean(process.env.DEV_TOOLS_ALLOW_REAL_DB_SWITCH),
+    devToolsEnabled: readBoolean(appEnv("DEV_TOOLS_ENABLED")),
+    devToolsAllowRealDbSwitch: readBoolean(appEnv("DEV_TOOLS_ALLOW_REAL_DB_SWITCH")),
     databaseProfiles
   };
 }

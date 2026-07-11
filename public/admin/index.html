@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -13,14 +13,12 @@
         <h1>Tasks Control</h1>
       </div>
       <div class="topbar-actions">
-        <input id="apiToken" type="password" placeholder="REST API bearer token" autocomplete="off" />
-        <button id="saveTokenButton" class="secondary">Save token</button>
-        <button id="refreshButton">Refresh</button>
+        <button id="configButton" type="button" class="secondary icon-button" aria-label="Open config">⚙</button>
       </div>
     </header>
 
     <main class="layout">
-      <section class="panel sidebar">
+      <section class="panel sidebar" data-mobile-panel="progress">
         <div class="panel-heading">
           <div>
             <p class="eyebrow">Overview</p>
@@ -30,18 +28,6 @@
         </div>
 
         <div id="metrics" class="metrics"></div>
-
-        <section class="stack security-panel">
-          <div class="panel-heading">
-            <div>
-              <p class="eyebrow">Security</p>
-              <h3>Posture</h3>
-            </div>
-            <span id="securityStatus" class="pill muted">loading</span>
-          </div>
-          <div id="securityControls" class="security-controls"></div>
-          <div id="securitySignals" class="security-signals"></div>
-        </section>
 
         <form id="createTaskForm" class="stack form-block">
           <h3>Create task</h3>
@@ -88,29 +74,43 @@
         </form>
       </section>
 
-      <section class="panel main-panel">
+      <section class="panel main-panel" data-mobile-panel="tasks">
         <div class="panel-heading">
           <div>
             <p class="eyebrow">Workflow</p>
             <h2>Tasks</h2>
           </div>
-          <div class="filters">
-            <input id="searchInput" placeholder="Search title or id" />
-            <select id="stateFilter">
-              <option value="">All states</option>
-              <option value="draft">draft</option>
-              <option value="ready">ready</option>
-              <option value="blocked">blocked</option>
-              <option value="agent_running">agent_running</option>
-              <option value="pending_review">pending_review</option>
-              <option value="pending_approval">pending_approval</option>
-              <option value="write_running">write_running</option>
-              <option value="validation_running">validation_running</option>
-              <option value="completed">completed</option>
-              <option value="failed">failed</option>
-              <option value="cancelled">cancelled</option>
-            </select>
+          <div class="task-panel-tools">
+            <div class="view-toggle" role="tablist" aria-label="Task view">
+              <button id="taskListViewButton" type="button" class="secondary active" aria-pressed="true">List</button>
+              <button id="taskGraphViewButton" type="button" class="secondary" aria-pressed="false">Graph</button>
+            </div>
+            <div class="filters">
+              <input id="searchInput" placeholder="Search title, id, agent, repo" />
+              <select id="stateFilter">
+                <option value="">All states</option>
+                <option value="draft">draft</option>
+                <option value="ready" selected>ready</option>
+                <option value="blocked">blocked</option>
+                <option value="running">running</option>
+                <option value="pending_review">pending_review</option>
+                <option value="pending_approval">pending_approval</option>
+                <option value="completed">completed</option>
+                <option value="failed">failed</option>
+                <option value="cancelled">cancelled</option>
+              </select>
+            </div>
           </div>
+        </div>
+
+        <div class="quick-filters" aria-label="Task quick filters">
+          <button type="button" class="secondary quick-filter active" data-filter="ready">Ready</button>
+          <button type="button" class="secondary quick-filter" data-filter="draft">Draft</button>
+          <button type="button" class="secondary quick-filter" data-filter="running">Running</button>
+          <button type="button" class="secondary quick-filter" data-filter="blocked">Blocked</button>
+          <button type="button" class="secondary quick-filter" data-filter="done">Done</button>
+          <button type="button" class="secondary quick-filter" data-filter="cancelled">Cancelled</button>
+          <button type="button" class="secondary quick-filter" data-filter="">All</button>
         </div>
 
         <section class="bulk-toolbar" aria-label="Bulk task actions">
@@ -167,15 +167,16 @@
         </section>
 
         <div id="tasksList" class="tasks-list"></div>
+        <div id="taskGraph" class="task-graph" hidden></div>
       </section>
 
-      <aside class="panel detail-panel">
+      <aside class="panel detail-panel" data-mobile-panel="assign">
         <div id="taskDetail" class="empty-state">
           Select a task to inspect workflow, links, and timeline.
         </div>
       </aside>
 
-      <section class="panel workflow-panel">
+      <section class="panel workflow-panel" data-mobile-panel="flow">
         <div class="panel-heading">
           <div>
             <p class="eyebrow">Orchestration</p>
@@ -223,9 +224,140 @@
       </section>
     </main>
 
+    <nav class="mobile-nav" aria-label="Mobile navigation">
+      <button type="button" class="mobile-nav-button active" data-mobile-view="progress">
+        <span>Progress</span>
+      </button>
+      <button type="button" class="mobile-nav-button" data-mobile-view="tasks">
+        <span>Tasks</span>
+      </button>
+      <button type="button" class="mobile-nav-button" data-mobile-view="assign">
+        <span>Assign</span>
+      </button>
+      <button type="button" class="mobile-nav-button" data-mobile-view="flow">
+        <span>Flow</span>
+      </button>
+    </nav>
+
     <div id="toast" class="toast" hidden></div>
 
+    <div id="envModal" class="modal" hidden>
+      <button id="envModalBackdrop" class="modal-backdrop" type="button" aria-label="Close env issues modal"></button>
+      <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="envModalTitle">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Config</p>
+            <h2 id="envModalTitle">Bearer: -</h2>
+          </div>
+          <div class="modal-header-actions">
+            <button id="envModalCloseButton" type="button" class="secondary" data-modal-close="true">Close</button>
+            <button id="envModalDismissButton" type="button" class="secondary icon-button modal-close-x" aria-label="Dismiss modal" data-modal-close="true">×</button>
+          </div>
+        </div>
+
+        <section class="stack security-panel modal-section">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Access</p>
+              <h3>Token</h3>
+            </div>
+            <button id="refreshButton" type="button" class="secondary">Refresh</button>
+          </div>
+          <div class="modal-token-grid">
+            <input id="apiToken" type="password" placeholder="REST API bearer token" autocomplete="off" />
+            <button id="saveTokenButton" type="button">Save token</button>
+          </div>
+        </section>
+
+        <div id="envModalSummary" class="env-summary"></div>
+        <div id="envModalIssues" class="env-issues"></div>
+
+        <section class="stack security-panel modal-section">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Runtime</p>
+              <h3>Environment</h3>
+            </div>
+            <span id="environmentStatus" class="pill muted">loading</span>
+          </div>
+
+          <form id="environmentForm" class="stack">
+            <div class="grid-2">
+              <label>
+                Runtime mode
+                <select id="runtimeModeSelect" name="runtime_mode">
+                  <option value="local">local</option>
+                  <option value="development">development</option>
+                  <option value="staging">staging</option>
+                  <option value="production">production</option>
+                </select>
+              </label>
+              <label>
+                Database target
+                <select id="dbTargetSelect" name="db_target"></select>
+              </label>
+            </div>
+
+            <div class="environment-actions">
+              <button type="submit">Apply</button>
+              <button id="productionPresetButton" type="button" class="secondary">Use production preset</button>
+            </div>
+
+            <p class="helper-text">
+              Production targets are guarded and require <code>DS_MCP_DEV_TOOLS_ALLOW_REAL_DB_SWITCH=true</code>.
+            </p>
+          </form>
+
+          <div class="security-signals">
+            <div class="security-signal">
+              <strong>Active runtime</strong>
+              <span id="runtimeModeValue">-</span>
+            </div>
+            <div class="security-signal">
+              <strong>Active DB target</strong>
+              <span id="dbTargetValue">-</span>
+            </div>
+            <div class="security-signal">
+              <strong>Supabase host</strong>
+              <span id="dbHostValue">-</span>
+            </div>
+            <div class="security-signal">
+              <strong>Dev tools</strong>
+              <span id="devToolsValue">-</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="stack security-panel modal-section">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Security</p>
+              <h3>Posture</h3>
+            </div>
+            <span id="securityStatus" class="pill muted">loading</span>
+          </div>
+          <div id="securityControls" class="security-controls"></div>
+          <div id="securitySignals" class="security-signals"></div>
+        </section>
+
+        <section class="detail-section">
+          <div class="bulk-toolbar-heading">
+            <h3>Suggested fix</h3>
+            <button id="envCopyFixButton" type="button" class="secondary">Copy fix</button>
+          </div>
+          <pre id="envModalFixSnippet" class="env-fix-snippet"></pre>
+        </section>
+
+        <div class="modal-actions">
+          <button id="envIssuesButton" type="button" class="secondary">Refresh checks</button>
+          <button id="envModalRefreshButton" type="button">Re-check</button>
+        </div>
+      </section>
+    </div>
+
+    <script src="/admin/local-bootstrap.js" defer></script>
     <script src="/admin/app.js" type="module"></script>
     <script src="/admin/bulk.js" type="module"></script>
   </body>
 </html>
+

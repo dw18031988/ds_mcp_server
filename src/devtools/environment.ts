@@ -61,8 +61,13 @@ export function switchRuntimeEnvironment(config: AppConfig, input: EnvironmentSw
     throw new Error("runtime_mode or db_target is required");
   }
 
+  let nextRuntimeMode = input.runtime_mode || config.runtimeMode;
+  let nextDbTarget = config.activeDbTarget;
+  let nextSupabaseUrl = config.supabaseUrl;
+  let nextSupabaseServiceRoleKey = config.supabaseServiceRoleKey;
+
   if (input.runtime_mode) {
-    config.runtimeMode = input.runtime_mode;
+    nextRuntimeMode = input.runtime_mode;
   }
 
   if (input.db_target) {
@@ -83,10 +88,15 @@ export function switchRuntimeEnvironment(config: AppConfig, input: EnvironmentSw
       );
     }
 
-    config.activeDbTarget = target;
-    config.supabaseUrl = profile.supabaseUrl;
-    config.supabaseServiceRoleKey = profile.supabaseServiceRoleKey;
+    nextDbTarget = target;
+    nextSupabaseUrl = profile.supabaseUrl;
+    nextSupabaseServiceRoleKey = profile.supabaseServiceRoleKey;
   }
+
+  config.runtimeMode = nextRuntimeMode;
+  config.activeDbTarget = nextDbTarget;
+  config.supabaseUrl = nextSupabaseUrl;
+  config.supabaseServiceRoleKey = nextSupabaseServiceRoleKey;
 
   return getEnvironmentStatus(config);
 }

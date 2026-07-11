@@ -103,14 +103,27 @@ Design System Backend / Custom GPT / ChatGPT
 ```bash
 npm install
 cp .env.example .env
+npm run setup:local
 npm run dev
 ```
+
+`npm run setup:local` writes a local `.env.local` with strong tokens for REST, MCP, and dev tooling, then points the app at your configured Supabase credentials.
 
 Health check:
 
 ```bash
 curl http://localhost:8787/health
 ```
+
+Local admin UI:
+
+```text
+http://localhost:8787/admin
+```
+
+The admin page includes a localhost environment switcher that can target `production` when `DEV_TOOLS_ENABLED=true` and `DEV_TOOLS_ALLOW_REAL_DB_SWITCH=true` are set.
+When `.env.local` exists, the localhost admin page also auto-loads the REST bearer token so you do not need to paste it manually.
+Use the "Check env issues" modal in `/admin` to see missing or broken env settings and copy a suggested `.env.local` fix snippet.
 
 Root check:
 

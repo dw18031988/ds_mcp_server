@@ -154,6 +154,29 @@ function adminContentSecurityPolicy(): string {
   ].join("; ");
 }
 
+function isAdminAssetPath(pathname: string): boolean {
+  return pathname === "/admin" || pathname.startsWith("/admin/");
+}
+
+function localAdminBootstrapScript(): string {
+  const token = config.restApiBearerToken || "";
+  const safeToken = JSON.stringify(token);
+  const safeTokenKey = JSON.stringify("dw_agentops_api_token");
+
+  return `globalThis.__LOCAL_ADMIN_BOOTSTRAP__ = globalThis.__LOCAL_ADMIN_BOOTSTRAP__ || {};` +
+    `(() => {` +
+    `const token = ${safeToken};` +
+    `const key = ${safeTokenKey};` +
+    `if (!token) return;` +
+    `try {` +
+    `localStorage.setItem(key, token);` +
+    `globalThis.__LOCAL_ADMIN_BOOTSTRAP__ = { token, key };` +
+    `} catch (error) {` +
+    `globalThis.__LOCAL_ADMIN_BOOTSTRAP__ = { token, key, error: String(error?.message || error) };` +
+    `}` +
+    `})();`;
+}
+
 function inlineStyleContentSecurityPolicy(): string {
   return [
     "default-src 'self'",
@@ -764,7 +787,24 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
 
 async function handleAdminStatic(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
   if (req.method !== "GET" && req.method !== "HEAD") return false;
-  if (url.pathname !== "/admin" && !url.pathname.startsWith("/admin/")) return false;
+  if (!isAdminAssetPath(url.pathname)) return false;
+
+  if (url.pathname === "/admin/local-bootstrap.js") {
+    const body = Buffer.from(localAdminBootstrapScript(), "utf8");
+    res.writeHead(200, {
+      "content-type": "application/javascript; charset=utf-8",
+      "content-length": String(body.byteLength),
+      "Content-Security-Policy": adminContentSecurityPolicy()
+    });
+
+    if (req.method === "HEAD") {
+      res.end();
+      return true;
+    }
+
+    res.end(body);
+    return true;
+  }
 
   const relativePath =
     url.pathname === "/admin" || url.pathname === "/admin/"
@@ -1035,6 +1075,7 @@ function getCapabilities() {
       "/api/tasks/{task_id}/links/{link_id}",
       "/api/tasks/{task_id}/transitions",
       "/api/tasks/{task_id}/events",
+      "/api/task-links",
       "/api/task-links/bulk",
       "/api/workflows",
       "/api/workflows/{workflow_id}",
@@ -1172,6 +1213,15 @@ async function enforceSecurity(
     res.writeHead(204);
     res.end();
     return null;
+  }
+
+  if (config.runtimeMode === "local" && ["GET", "HEAD"].includes(method) && isAdminAssetPath(url.pathname)) {
+    return {
+      requestId: requestIdValue,
+      routeId: "admin.local_static",
+      principalType: "local_admin",
+      principalId: "local"
+    };
   }
 
   if (url.pathname === config.mcpPath && config.mcpUrlSecret && !config.mcpBearerToken) {

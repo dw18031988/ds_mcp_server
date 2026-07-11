@@ -201,6 +201,19 @@ export async function listTaskLinks(config: AppConfig, taskId: string): Promise<
   return (data ?? []) as TaskLinkRecord[];
 }
 
+export async function listAllTaskLinks(config: AppConfig, limit = 1000): Promise<TaskLinkRecord[]> {
+  const supabase = getSupabaseClient(config);
+  const { data, error } = await supabase
+    .from(LINKS_TABLE)
+    .select("*")
+    .eq("status", "active")
+    .order("created_at", { ascending: false })
+    .limit(Math.min(Math.max(limit, 1), 2000));
+
+  if (error) throw new Error(`Failed to list task links: ${error.message}`);
+  return (data ?? []) as TaskLinkRecord[];
+}
+
 export async function createTaskLink(
   config: AppConfig,
   fromTaskId: string,

@@ -70,7 +70,7 @@ function now(): string {
 }
 
 function dashboardCacheTtlMs(): number {
-  const raw = Number(process.env.DASHBOARD_CACHE_TTL_MS ?? 1500);
+  const raw = Number(process.env.DS_MCP_DASHBOARD_CACHE_TTL_MS ?? process.env.DASHBOARD_CACHE_TTL_MS ?? 1500);
   if (!Number.isFinite(raw) || raw < 0) return 1500;
   return Math.floor(raw);
 }

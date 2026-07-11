@@ -30,6 +30,7 @@ function isAgentOpsPath(pathname: string): boolean {
   return (
     pathname === "/api/tasks" ||
     pathname.startsWith("/api/tasks/") ||
+    pathname === "/api/task-links" ||
     pathname.startsWith("/api/task-links/") ||
     pathname === "/api/workflows" ||
     pathname.startsWith("/api/workflows/") ||
@@ -182,6 +183,7 @@ export function resolveRoutePolicy(method: string, pathname: string): ResolvedRo
     pathname.startsWith("/api/agent-runs/") ||
     pathname === "/api/tasks" ||
     pathname.startsWith("/api/tasks/") ||
+    pathname === "/api/task-links" ||
     pathname.startsWith("/api/task-links/") ||
     pathname === "/api/workflows" ||
     pathname.startsWith("/api/workflows/") ||
