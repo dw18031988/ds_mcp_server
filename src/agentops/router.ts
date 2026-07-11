@@ -510,6 +510,37 @@ export async function handleAgentOpsRestApi(
       return true;
     }
 
+    if (taskMatch && req.method === "DELETE") {
+      const taskId = decodePathValue(taskMatch[1]);
+      const task = await deleteTask(config, taskId, url.searchParams.get("force") === "true");
+      sendJson(res, 200, { ok: true, task });
+      return true;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/task-links/bulk") {
+      const body = bulkCreateTaskLinksSchema.parse(await readJsonBody(req));
+      const result = await runBatch(body.links, async (item) => {
+        const link = await createTaskLink(config, item.from_task_id, {
+          to_task_id: item.to_task_id,
+          link_type: item.link_type,
+          created_by: item.created_by
+        });
+        return { id: link.id, value: link };
+      });
+      sendJson(res, batchStatus(result), result);
+      return true;
+    }
+
+    if (req.method === "DELETE" && url.pathname === "/api/task-links/bulk") {
+      const body = bulkDeleteTaskLinksSchema.parse(await readJsonBody(req));
+      const result = await runBatch(body.link_ids, async (linkId) => {
+        const link = await deleteTaskLink(config, linkId);
+        return { id: link.id, value: link };
+      });
+      sendJson(res, batchStatus(result), result);
+      return true;
+    }
+
     const linksMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/links$/);
 
     if (linksMatch && req.method === "GET") {
@@ -523,6 +554,14 @@ export async function handleAgentOpsRestApi(
       const body = createTaskLinkSchema.parse(await readJsonBody(req));
       const link = await createTaskLink(config, taskId, body);
       sendJson(res, 201, { ok: true, link });
+      return true;
+    }
+
+    const linkDeleteMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)\/links\/([^/]+)$/);
+
+    if (linkDeleteMatch && req.method === "DELETE") {
+      const link = await deleteTaskLink(config, decodePathValue(linkDeleteMatch[2]));
+      sendJson(res, 200, { ok: true, link });
       return true;
     }
 
