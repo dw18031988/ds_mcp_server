@@ -136,13 +136,60 @@ function queryPositiveInt(url: URL, name: string, fallback: number): number {
 
 function apiErrorStatus(error: Error): number {
   if (error.message.includes("not configured")) return 500;
-  if (error.message.includes("not found") || error.message.includes("not found")) return 404;
-  if (error.message.includes("Invalid transition") || error.message.includes("open blockers")) return 409;
+  if (error.message.includes("not found")) return 404;
+  if (
+    error.message.includes("Invalid transition") ||
+    error.message.includes("open blockers") ||
+    error.message.includes("cannot be deleted") ||
+    error.message.includes("cannot be removed") ||
+    error.message.includes("has active links") ||
+    error.message.includes("has tasks") ||
+    error.message.includes("active task")
+  ) return 409;
   return 400;
+}
+
+type BatchResult = {
+  index: number;
+  ok: boolean;
+  id?: string;
+  value?: unknown;
+  error?: string;
+};
+
+async function runBatch<T>(
+  items: T[],
+  operation: (item: T, index: number) => Promise<{ id?: string; value?: unknown }>
+): Promise<{ ok: boolean; succeeded: number; failed: number; results: BatchResult[] }> {
+  const results: BatchResult[] = [];
+  for (let index = 0; index < items.length; index += 1) {
+    try {
+      const output = await operation(items[index]!, index);
+      results.push({ index, ok: true, ...output });
+    } catch (error) {
+      results.push({
+        index,
+        ok: false,
+        error: error instanceof Error ? error.message : "Batch operation failed"
+      });
+    }
+  }
+  const succeeded = results.filter((result) => result.ok).length;
+  return {
+    ok: succeeded === results.length,
+    succeeded,
+    failed: results.length - succeeded,
+    results
+  };
+}
+
+function batchStatus(result: { ok: boolean }): number {
+  return result.ok ? 200 : 207;
 }
 
 function isAgentOpsPath(pathname: string): boolean {
   return pathname.startsWith("/api/tasks") ||
+    pathname.startsWith("/api/task-links") ||
     pathname.startsWith("/api/workflows") ||
     pathname.startsWith("/api/async-tasks") ||
     pathname.startsWith("/api/dashboard") ||
