@@ -410,10 +410,22 @@ h3 {
 }
 
 .inline-check input,
-.workflow-task-row input {
+.workflow-task-row input,
+.selectable-link input {
   height: 18px;
   margin: 0;
   width: 18px;
+}
+
+.selectable-link {
+  align-items: start;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 18px 1fr;
+}
+
+.selectable-link span {
+  overflow-wrap: anywhere;
 }
 
 .bulk-toolbar {
