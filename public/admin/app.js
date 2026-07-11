@@ -42,13 +42,22 @@ async function request(path, options = {}) {
   });
 
   const contentType = response.headers.get("content-type") || "";
+  const requestId = response.headers.get("x-request-id");
   const body = contentType.includes("application/json")
     ? await response.json()
     : await response.text();
 
   if (!response.ok) {
-    const message = typeof body === "object" && body && body.error ? body.error : response.statusText;
-    throw new Error(message || `Request failed: ${response.status}`);
+    const responseError = typeof body === "object" && body ? body.error : undefined;
+    const responseDetail = typeof body === "object" && body ? body.detail : undefined;
+    const bodyRequestId = typeof body === "object" && body ? body.request_id : undefined;
+    const parts = [
+      `${options.method || "GET"} ${path} failed with ${response.status}`,
+      responseError || response.statusText,
+      responseDetail ? `detail: ${responseDetail}` : undefined,
+      bodyRequestId || requestId ? `request_id: ${bodyRequestId || requestId}` : undefined
+    ].filter(Boolean);
+    throw new Error(parts.join(" · "));
   }
 
   return body;

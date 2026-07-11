@@ -1102,6 +1102,7 @@ async function enforceSecurity(
   setSecurityHeaders(res);
   setCorsHeaders(req, res);
 
+  try {
   const mcpUrlSecret = mcpUrlSecretFromPathname(config.mcpPath, url.pathname);
   if (mcpUrlSecret) {
     if (method === "OPTIONS") {
@@ -1232,6 +1233,26 @@ async function enforceSecurity(
     principalType: authDecision.principal.type,
     principalId: authDecision.principal.id
   };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Security enforcement failed";
+    console.error("Security enforcement failed", {
+      request_id: requestIdValue,
+      method,
+      pathname: url.pathname,
+      error: message
+    });
+    sendJson(
+      res,
+      500,
+      {
+        error: "Security enforcement failed",
+        detail: message,
+        request_id: requestIdValue
+      },
+      { "X-Request-Id": requestIdValue }
+    );
+    return null;
+  }
 }
 
 async function handleWorkspaceAgentCallback(
