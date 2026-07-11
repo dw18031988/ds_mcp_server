@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Generic Coding Governance Manifest v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "canonical_file",
+    "canonical_sha256",
+    "generated_at",
+    "generator",
+    "authoritative_files",
+    "derived_files",
+    "support_files",
+    "project_profiles",
+    "critical_rule_ids",
+    "file_sha256"
+  ],
+  "properties": {
+    "version": {
+      "const": "1.0"
+    },
+    "canonical_file": {
+      "const": "Coding_Project_Governance_v1.0.md"
+    },
+    "canonical_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "generator": {
+      "type": "string"
+    },
+    "authoritative_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "derived_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "support_files": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "project_profiles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "critical_rule_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "file_sha256": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      }
+    }
+  }
+}

@@ -1,0 +1,35 @@
+name: Governance Validation
+
+on:
+  pull_request:
+    paths:
+      - ".governance/**"
+      - "AGENTS.md"
+      - ".github/workflows/governance-validation.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - ".governance/**"
+      - "AGENTS.md"
+      - ".github/workflows/governance-validation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate-governance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install validator dependencies
+        run: python -m pip install pyyaml jsonschema pillow
+      - name: Validate governance package and active profile
+        run: |
+          python .governance/enforce_coding_policy_v1_0.py \
+            --dir .governance \
+            --profile .governance/projects/ds-mcp/project-profile.yaml \
+            --report .governance/package-report.json

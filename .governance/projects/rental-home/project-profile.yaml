@@ -1,0 +1,66 @@
+version: '1.0'
+profile_id: rental-home
+project:
+  name: Rental Home
+  timezone: Asia/Ho_Chi_Minh
+  default_language: en
+  description: Small rental-management web application using Supabase, Vercel, React-oriented
+    frontend conventions, and Kiro spec-driven delivery.
+repository:
+  owner: nhatnguyenquang1838-coder
+  name: rental_home
+  url: https://github.com/nhatnguyenquang1838-coder/rental_home
+  default_branch: main
+  protected_branches:
+  - main
+  write_enabled: true
+  identity_status: verified
+  identity_note: Use a dedicated branch, worktree, and session folder for every task.
+connectors:
+  git_provider: DW
+  api_connector: null
+  account_or_tenant: null
+context:
+  read_first:
+  - AGENTS.md
+  - README.md
+  - TASK.md
+  - .kiro/steering/product.md
+  - .kiro/steering/tech.md
+  - .kiro/steering/structure.md
+  - .ai/skills/ai-master-router.md
+  - .ai/skills/ai-skill-registry-loader.md
+  - .ai/config.json
+  governance_from_protected_base: true
+  session_root: /mnt/data/rental_home_sessions/<YYYYMMDD-HHMM>-<TASK-ID>/
+  additional_notes:
+  - Read relevant .ai/skillsets/<name>/SKILL.md before using a skill.
+  - If the skill pack is supplied only as a ZIP, extract it into the approved session
+    folder before use.
+  - Root TASK.md and the project task board are sources of truth when present.
+commands:
+  discovery_required: true
+  package_manager: pnpm
+  validation_candidates:
+  - pnpm lint
+  - pnpm test
+  - pnpm typecheck
+  - pnpm build
+  execution_note: Run only commands that exist in the protected-base package scripts
+    and pass CMD-* inspection.
+ci:
+  provider: github-actions
+  recheck_delay: PT2M
+  required_workflows_discovery: true
+  known_required_workflows: []
+deployment:
+  provider: vercel
+  authority_gate: G5_DEPLOY
+  project_name: rental-home
+production_data:
+  provider: supabase
+  authority_gate: G6_PRODUCTION_DATA
+  notes: RLS, migrations, destructive writes, backfills, and credential changes require
+    explicit G6.
+extensions:
+- projects/rental-home/project-extension.md

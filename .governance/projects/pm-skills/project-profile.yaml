@@ -1,0 +1,63 @@
+version: '1.0'
+profile_id: pm-skills
+project:
+  name: PM SKILLS
+  timezone: Asia/Ho_Chi_Minh
+  default_language: en
+  description: Reusable project-management powers, skills, agents, steering rules,
+    hooks, templates, and use-case standards.
+repository:
+  owner: TO_BE_CONFIRMED
+  name: myskills
+  url: null
+  default_branch: main
+  protected_branches:
+  - main
+  write_enabled: false
+  identity_status: unconfirmed
+  identity_note: Repository name is known as myskills, but owner/URL must be verified
+    before any external write.
+connectors:
+  git_provider: DW
+  api_connector: null
+  account_or_tenant: null
+context:
+  read_first:
+  - README.md
+  - AGENTS.md
+  - POWER.md
+  - .kiro/skills/
+  - .kiro/powers/
+  - .kiro/agents/
+  - .kiro/hooks/
+  - steering/
+  governance_from_protected_base: true
+  session_root: /mnt/data/pm_skills_sessions/<YYYYMMDD-HHMM>-<TASK-ID>/
+  additional_notes:
+  - 'Preserve the separation: power = domain capability, skill = workflow, agent =
+    role, steering = persistent rule, hook = automation.'
+  - Use authoritative use-case standards and do not claim a skill/power is installable
+    until required files are present.
+commands:
+  discovery_required: true
+  package_manager: null
+  validation_candidates:
+  - discover from protected-base repository
+  execution_note: Do not assume a runtime or package manager. Validate Markdown, JSON/YAML
+    schemas, links, required manifests, and repository-defined tests after inspection.
+ci:
+  provider: github-actions-or-profile-discovered
+  recheck_delay: PT2M
+  required_workflows_discovery: true
+  known_required_workflows: []
+deployment:
+  provider: null
+  authority_gate: G5_DEPLOY
+  project_name: null
+production_data:
+  provider: null
+  authority_gate: G6_PRODUCTION_DATA
+  notes: No production-data system is assumed. Any future publication registry or
+    remote store must be added through a profile revision.
+extensions:
+- projects/pm-skills/project-extension.md

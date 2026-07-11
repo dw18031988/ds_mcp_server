@@ -1,0 +1,596 @@
+{
+  "overall": "PASS",
+  "canonical_sha256": "04cd33bbaff66f44917199e6bbb8355a1e956edb9c474e6c8e664ed8d0ed41c1",
+  "results": [
+    {
+      "check": "SCHEMA-MANIFEST",
+      "status": "PASS",
+      "detail": "schema validation passed"
+    },
+    {
+      "check": "META-01",
+      "status": "PASS",
+      "detail": "canonical=Coding_Project_Governance_v1.0.md"
+    },
+    {
+      "check": "META-02",
+      "status": "PASS",
+      "detail": "canonical authoritative=true"
+    },
+    {
+      "check": "META-03",
+      "status": "PASS",
+      "detail": "canonical version=1.0"
+    },
+    {
+      "check": "HASH-01",
+      "status": "PASS",
+      "detail": "canonical sha=04cd33bbaff66f44917199e6bbb8355a1e956edb9c474e6c8e664ed8d0ed41c1"
+    },
+    {
+      "check": "CORE-GENERIC",
+      "status": "PASS",
+      "detail": "project-specific leaks=[]"
+    },
+    {
+      "check": "RULE-TRUST-01",
+      "status": "PASS",
+      "detail": "TRUST-01 present"
+    },
+    {
+      "check": "RULE-TRUST-02",
+      "status": "PASS",
+      "detail": "TRUST-02 present"
+    },
+    {
+      "check": "RULE-TRUST-03",
+      "status": "PASS",
+      "detail": "TRUST-03 present"
+    },
+    {
+      "check": "RULE-TRUST-04",
+      "status": "PASS",
+      "detail": "TRUST-04 present"
+    },
+    {
+      "check": "RULE-TRUST-06",
+      "status": "PASS",
+      "detail": "TRUST-06 present"
+    },
+    {
+      "check": "RULE-GATE-01",
+      "status": "PASS",
+      "detail": "GATE-01 present"
+    },
+    {
+      "check": "RULE-GATE-02",
+      "status": "PASS",
+      "detail": "GATE-02 present"
+    },
+    {
+      "check": "RULE-GATE-03",
+      "status": "PASS",
+      "detail": "GATE-03 present"
+    },
+    {
+      "check": "RULE-GATE-04",
+      "status": "PASS",
+      "detail": "GATE-04 present"
+    },
+    {
+      "check": "RULE-GATE-05",
+      "status": "PASS",
+      "detail": "GATE-05 present"
+    },
+    {
+      "check": "RULE-PROFILE-01",
+      "status": "PASS",
+      "detail": "PROFILE-01 present"
+    },
+    {
+      "check": "RULE-PROFILE-02",
+      "status": "PASS",
+      "detail": "PROFILE-02 present"
+    },
+    {
+      "check": "RULE-PROFILE-03",
+      "status": "PASS",
+      "detail": "PROFILE-03 present"
+    },
+    {
+      "check": "RULE-PROFILE-04",
+      "status": "PASS",
+      "detail": "PROFILE-04 present"
+    },
+    {
+      "check": "RULE-PRE-02",
+      "status": "PASS",
+      "detail": "PRE-02 present"
+    },
+    {
+      "check": "RULE-PRE-03",
+      "status": "PASS",
+      "detail": "PRE-03 present"
+    },
+    {
+      "check": "RULE-PRE-04",
+      "status": "PASS",
+      "detail": "PRE-04 present"
+    },
+    {
+      "check": "RULE-PRE-05",
+      "status": "PASS",
+      "detail": "PRE-05 present"
+    },
+    {
+      "check": "RULE-GH-02",
+      "status": "PASS",
+      "detail": "GH-02 present"
+    },
+    {
+      "check": "RULE-GH-03",
+      "status": "PASS",
+      "detail": "GH-03 present"
+    },
+    {
+      "check": "RULE-CMD-01",
+      "status": "PASS",
+      "detail": "CMD-01 present"
+    },
+    {
+      "check": "RULE-CMD-02",
+      "status": "PASS",
+      "detail": "CMD-02 present"
+    },
+    {
+      "check": "RULE-CMD-03",
+      "status": "PASS",
+      "detail": "CMD-03 present"
+    },
+    {
+      "check": "RULE-CMD-04",
+      "status": "PASS",
+      "detail": "CMD-04 present"
+    },
+    {
+      "check": "RULE-CMD-05",
+      "status": "PASS",
+      "detail": "CMD-05 present"
+    },
+    {
+      "check": "RULE-DATA-01",
+      "status": "PASS",
+      "detail": "DATA-01 present"
+    },
+    {
+      "check": "RULE-DATA-02",
+      "status": "PASS",
+      "detail": "DATA-02 present"
+    },
+    {
+      "check": "RULE-DATA-03",
+      "status": "PASS",
+      "detail": "DATA-03 present"
+    },
+    {
+      "check": "RULE-SEC-01",
+      "status": "PASS",
+      "detail": "SEC-01 present"
+    },
+    {
+      "check": "RULE-SEC-02",
+      "status": "PASS",
+      "detail": "SEC-02 present"
+    },
+    {
+      "check": "RULE-VAL-04",
+      "status": "PASS",
+      "detail": "VAL-04 present"
+    },
+    {
+      "check": "RULE-VAL-05",
+      "status": "PASS",
+      "detail": "VAL-05 present"
+    },
+    {
+      "check": "RULE-PR-02",
+      "status": "PASS",
+      "detail": "PR-02 present"
+    },
+    {
+      "check": "RULE-CI-01",
+      "status": "PASS",
+      "detail": "CI-01 present"
+    },
+    {
+      "check": "RULE-CI-02",
+      "status": "PASS",
+      "detail": "CI-02 present"
+    },
+    {
+      "check": "RULE-CI-03",
+      "status": "PASS",
+      "detail": "CI-03 present"
+    },
+    {
+      "check": "RULE-CI-04",
+      "status": "PASS",
+      "detail": "CI-04 present"
+    },
+    {
+      "check": "RULE-CI-05",
+      "status": "PASS",
+      "detail": "CI-05 present"
+    },
+    {
+      "check": "RULE-POLICY-01",
+      "status": "PASS",
+      "detail": "POLICY-01 present"
+    },
+    {
+      "check": "RULE-POLICY-02",
+      "status": "PASS",
+      "detail": "POLICY-02 present"
+    },
+    {
+      "check": "RULE-POLICY-03",
+      "status": "PASS",
+      "detail": "POLICY-03 present"
+    },
+    {
+      "check": "RULE-POLICY-04",
+      "status": "PASS",
+      "detail": "POLICY-04 present"
+    },
+    {
+      "check": "RULE-POLICY-05",
+      "status": "PASS",
+      "detail": "POLICY-05 present"
+    },
+    {
+      "check": "RULE-BAN-01",
+      "status": "PASS",
+      "detail": "BAN-01 present"
+    },
+    {
+      "check": "APPROVAL-EXACT",
+      "status": "PASS",
+      "detail": "exact approval format"
+    },
+    {
+      "check": "PROFILE-BOUNDARY",
+      "status": "PASS",
+      "detail": "profile controls"
+    },
+    {
+      "check": "VISUAL-OVERVIEW",
+      "status": "PASS",
+      "detail": "Mermaid 3x3"
+    },
+    {
+      "check": "VISUAL-DETAIL",
+      "status": "PASS",
+      "detail": "detailed 6x6"
+    },
+    {
+      "check": "FILE-Coding_Project_Governance_v1.0.md",
+      "status": "PASS",
+      "detail": "Coding_Project_Governance_v1.0.md exists"
+    },
+    {
+      "check": "FILE-Coding_Project_Governance_v1.0_Compact.md",
+      "status": "PASS",
+      "detail": "Coding_Project_Governance_v1.0_Compact.md exists"
+    },
+    {
+      "check": "FILE-Coding_Project_Governance_v1.0.docx",
+      "status": "PASS",
+      "detail": "Coding_Project_Governance_v1.0.docx exists"
+    },
+    {
+      "check": "FILE-ChatGPT_Project_Bootstrap.template.md",
+      "status": "PASS",
+      "detail": "ChatGPT_Project_Bootstrap.template.md exists"
+    },
+    {
+      "check": "FILE-Project_Profile.template.yaml",
+      "status": "PASS",
+      "detail": "Project_Profile.template.yaml exists"
+    },
+    {
+      "check": "FILE-Project_Extension.template.md",
+      "status": "PASS",
+      "detail": "Project_Extension.template.md exists"
+    },
+    {
+      "check": "FILE-policy_machine.v1.0.json",
+      "status": "PASS",
+      "detail": "policy_machine.v1.0.json exists"
+    },
+    {
+      "check": "FILE-Enforcement_Checklist.md",
+      "status": "PASS",
+      "detail": "Enforcement_Checklist.md exists"
+    },
+    {
+      "check": "FILE-Lessons_Learned.md",
+      "status": "PASS",
+      "detail": "Lessons_Learned.md exists"
+    },
+    {
+      "check": "FILE-Migration_Guide_DS_MCP_to_Generic.md",
+      "status": "PASS",
+      "detail": "Migration_Guide_DS_MCP_to_Generic.md exists"
+    },
+    {
+      "check": "FILE-RedTeam_ReReview.md",
+      "status": "PASS",
+      "detail": "RedTeam_ReReview.md exists"
+    },
+    {
+      "check": "FILE-approval_envelope.schema.json",
+      "status": "PASS",
+      "detail": "approval_envelope.schema.json exists"
+    },
+    {
+      "check": "FILE-change_plan.schema.json",
+      "status": "PASS",
+      "detail": "change_plan.schema.json exists"
+    },
+    {
+      "check": "FILE-project_profile.schema.json",
+      "status": "PASS",
+      "detail": "project_profile.schema.json exists"
+    },
+    {
+      "check": "FILE-project_extension.schema.json",
+      "status": "PASS",
+      "detail": "project_extension.schema.json exists"
+    },
+    {
+      "check": "FILE-policy_manifest.schema.json",
+      "status": "PASS",
+      "detail": "policy_manifest.schema.json exists"
+    },
+    {
+      "check": "FILE-enforce_coding_policy_v1_0.py",
+      "status": "PASS",
+      "detail": "enforce_coding_policy_v1_0.py exists"
+    },
+    {
+      "check": "FILE-build_generic_policy.py",
+      "status": "PASS",
+      "detail": "build_generic_policy.py exists"
+    },
+    {
+      "check": "FILE-projects/rental-home/project-profile.yaml",
+      "status": "PASS",
+      "detail": "projects/rental-home/project-profile.yaml exists"
+    },
+    {
+      "check": "FILE-projects/ds-mcp/project-profile.yaml",
+      "status": "PASS",
+      "detail": "projects/ds-mcp/project-profile.yaml exists"
+    },
+    {
+      "check": "FILE-projects/pm-skills/project-profile.yaml",
+      "status": "PASS",
+      "detail": "projects/pm-skills/project-profile.yaml exists"
+    },
+    {
+      "check": "FILEHASH-Coding_Project_Governance_v1.0.md",
+      "status": "PASS",
+      "detail": "expected=04cd33bbaff66f44 actual=04cd33bbaff66f44"
+    },
+    {
+      "check": "FILEHASH-Coding_Project_Governance_v1.0_Compact.md",
+      "status": "PASS",
+      "detail": "expected=31b9662d768e428f actual=31b9662d768e428f"
+    },
+    {
+      "check": "FILEHASH-Coding_Project_Governance_v1.0.docx",
+      "status": "PASS",
+      "detail": "expected=08daf5c58b940b61 actual=08daf5c58b940b61"
+    },
+    {
+      "check": "FILEHASH-ChatGPT_Project_Bootstrap.template.md",
+      "status": "PASS",
+      "detail": "expected=24c5645c846c9f60 actual=24c5645c846c9f60"
+    },
+    {
+      "check": "FILEHASH-Project_Profile.template.yaml",
+      "status": "PASS",
+      "detail": "expected=53505c829f3d5c7d actual=53505c829f3d5c7d"
+    },
+    {
+      "check": "FILEHASH-Project_Extension.template.md",
+      "status": "PASS",
+      "detail": "expected=3338a17d02516f41 actual=3338a17d02516f41"
+    },
+    {
+      "check": "FILEHASH-policy_machine.v1.0.json",
+      "status": "PASS",
+      "detail": "expected=29882945f3ee8dfb actual=29882945f3ee8dfb"
+    },
+    {
+      "check": "FILEHASH-Enforcement_Checklist.md",
+      "status": "PASS",
+      "detail": "expected=d7582de494e88aaa actual=d7582de494e88aaa"
+    },
+    {
+      "check": "FILEHASH-Lessons_Learned.md",
+      "status": "PASS",
+      "detail": "expected=c752ba52a2174c2c actual=c752ba52a2174c2c"
+    },
+    {
+      "check": "FILEHASH-Migration_Guide_DS_MCP_to_Generic.md",
+      "status": "PASS",
+      "detail": "expected=d9d6ea4698a1df3b actual=d9d6ea4698a1df3b"
+    },
+    {
+      "check": "FILEHASH-RedTeam_ReReview.md",
+      "status": "PASS",
+      "detail": "expected=14b7d53d66dfd9f7 actual=14b7d53d66dfd9f7"
+    },
+    {
+      "check": "FILEHASH-approval_envelope.schema.json",
+      "status": "PASS",
+      "detail": "expected=c2c369fd0a5efa90 actual=c2c369fd0a5efa90"
+    },
+    {
+      "check": "FILEHASH-change_plan.schema.json",
+      "status": "PASS",
+      "detail": "expected=84ef8c6e20c2a46f actual=84ef8c6e20c2a46f"
+    },
+    {
+      "check": "FILEHASH-project_profile.schema.json",
+      "status": "PASS",
+      "detail": "expected=b1e634a4c3854669 actual=b1e634a4c3854669"
+    },
+    {
+      "check": "FILEHASH-project_extension.schema.json",
+      "status": "PASS",
+      "detail": "expected=7a0342875b20803b actual=7a0342875b20803b"
+    },
+    {
+      "check": "FILEHASH-policy_manifest.schema.json",
+      "status": "PASS",
+      "detail": "expected=75ea6e13bd60cf75 actual=75ea6e13bd60cf75"
+    },
+    {
+      "check": "FILEHASH-enforce_coding_policy_v1_0.py",
+      "status": "PASS",
+      "detail": "expected=51c55a40d1607fd8 actual=51c55a40d1607fd8"
+    },
+    {
+      "check": "FILEHASH-build_generic_policy.py",
+      "status": "PASS",
+      "detail": "expected=3dcae5affceb80bb actual=3dcae5affceb80bb"
+    },
+    {
+      "check": "FILEHASH-projects/rental-home/project-profile.yaml",
+      "status": "PASS",
+      "detail": "expected=6e84db71e8abcc22 actual=6e84db71e8abcc22"
+    },
+    {
+      "check": "FILEHASH-projects/rental-home/project-extension.md",
+      "status": "PASS",
+      "detail": "expected=b1f6e8519346db35 actual=b1f6e8519346db35"
+    },
+    {
+      "check": "FILEHASH-projects/rental-home/chatgpt-bootstrap.md",
+      "status": "PASS",
+      "detail": "expected=e593a8982a8dbc7d actual=e593a8982a8dbc7d"
+    },
+    {
+      "check": "FILEHASH-projects/ds-mcp/project-profile.yaml",
+      "status": "PASS",
+      "detail": "expected=0c4f87fe2e9e20e6 actual=0c4f87fe2e9e20e6"
+    },
+    {
+      "check": "FILEHASH-projects/ds-mcp/project-extension.md",
+      "status": "PASS",
+      "detail": "expected=f17a535333b6a620 actual=f17a535333b6a620"
+    },
+    {
+      "check": "FILEHASH-projects/ds-mcp/chatgpt-bootstrap.md",
+      "status": "PASS",
+      "detail": "expected=79b323230f1c64e1 actual=79b323230f1c64e1"
+    },
+    {
+      "check": "FILEHASH-projects/pm-skills/project-profile.yaml",
+      "status": "PASS",
+      "detail": "expected=79743189b9a733a2 actual=79743189b9a733a2"
+    },
+    {
+      "check": "FILEHASH-projects/pm-skills/project-extension.md",
+      "status": "PASS",
+      "detail": "expected=0a3093ba7c931236 actual=0a3093ba7c931236"
+    },
+    {
+      "check": "FILEHASH-projects/pm-skills/chatgpt-bootstrap.md",
+      "status": "PASS",
+      "detail": "expected=4389acbf7f347e00 actual=4389acbf7f347e00"
+    },
+    {
+      "check": "SCHEMAS-ALL",
+      "status": "PASS",
+      "detail": "all schemas valid"
+    },
+    {
+      "check": "PROFILE-SCHEMA-rental-home",
+      "status": "PASS",
+      "detail": "schema validation passed"
+    },
+    {
+      "check": "PROFILE-IDENTITY-rental-home",
+      "status": "PASS",
+      "detail": "status=verified write_enabled=True"
+    },
+    {
+      "check": "EXTENSION-rental-home",
+      "status": "PASS",
+      "detail": "schema validation passed"
+    },
+    {
+      "check": "PROFILE-SCHEMA-ds-mcp",
+      "status": "PASS",
+      "detail": "schema validation passed"
+    },
+    {
+      "check": "PROFILE-IDENTITY-ds-mcp",
+      "status": "PASS",
+      "detail": "status=verified write_enabled=True"
+    },
+    {
+      "check": "EXTENSION-ds-mcp",
+      "status": "PASS",
+      "detail": "schema validation passed"
+    },
+    {
+      "check": "PROFILE-SCHEMA-pm-skills",
+      "status": "PASS",
+      "detail": "schema validation passed"
+    },
+    {
+      "check": "PROFILE-IDENTITY-pm-skills",
+      "status": "PASS",
+      "detail": "status=unconfirmed write_enabled=False"
+    },
+    {
+      "check": "EXTENSION-pm-skills",
+      "status": "PASS",
+      "detail": "schema validation passed"
+    },
+    {
+      "check": "ACTIVE-PROFILE-SCHEMA",
+      "status": "PASS",
+      "detail": "schema validation passed"
+    },
+    {
+      "check": "ACTIVE-PROFILE-WRITE",
+      "status": "PASS",
+      "detail": "identity=verified write_enabled=True"
+    },
+    {
+      "check": "TASK-ENV-SCHEMA",
+      "status": "SKIP",
+      "detail": "no task envelope supplied"
+    },
+    {
+      "check": "TASK-PLAN-SCHEMA",
+      "status": "SKIP",
+      "detail": "no change plan supplied"
+    },
+    {
+      "check": "TASK-SVG-SAFETY",
+      "status": "SKIP",
+      "detail": "no SVG supplied"
+    },
+    {
+      "check": "TASK-PNG-RESOLUTION",
+      "status": "SKIP",
+      "detail": "no PNG supplied"
+    }
+  ]
+}

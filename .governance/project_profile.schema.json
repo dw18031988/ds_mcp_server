@@ -1,0 +1,278 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Generic Coding Project Profile v1.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "profile_id",
+    "project",
+    "repository",
+    "connectors",
+    "context",
+    "commands",
+    "ci",
+    "deployment",
+    "production_data",
+    "extensions"
+  ],
+  "properties": {
+    "version": {
+      "const": "1.0"
+    },
+    "profile_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{2,63}$"
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "timezone",
+        "default_language"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timezone": {
+          "type": "string",
+          "minLength": 1
+        },
+        "default_language": {
+          "type": "string",
+          "minLength": 2
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owner",
+        "name",
+        "default_branch",
+        "protected_branches",
+        "write_enabled",
+        "identity_status"
+      ],
+      "properties": {
+        "owner": {
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "default_branch": {
+          "type": "string",
+          "minLength": 1
+        },
+        "protected_branches": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "write_enabled": {
+          "type": "boolean"
+        },
+        "identity_status": {
+          "enum": [
+            "verified",
+            "assumption",
+            "unconfirmed"
+          ]
+        },
+        "identity_note": {
+          "type": "string"
+        }
+      }
+    },
+    "connectors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "git_provider"
+      ],
+      "properties": {
+        "git_provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "api_connector": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "account_or_tenant": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "read_first",
+        "governance_from_protected_base",
+        "session_root"
+      ],
+      "properties": {
+        "read_first": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "governance_from_protected_base": {
+          "type": "boolean"
+        },
+        "session_root": {
+          "type": "string",
+          "minLength": 1
+        },
+        "additional_notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "commands": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "discovery_required",
+        "package_manager",
+        "validation_candidates"
+      ],
+      "properties": {
+        "discovery_required": {
+          "type": "boolean"
+        },
+        "package_manager": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "validation_candidates": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "execution_note": {
+          "type": "string"
+        }
+      }
+    },
+    "ci": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "recheck_delay",
+        "required_workflows_discovery"
+      ],
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recheck_delay": {
+          "type": "string"
+        },
+        "required_workflows_discovery": {
+          "type": "boolean"
+        },
+        "known_required_workflows": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "deployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "authority_gate"
+      ],
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "authority_gate": {
+          "const": "G5_DEPLOY"
+        },
+        "project_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "production_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "authority_gate"
+      ],
+      "properties": {
+        "provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "authority_gate": {
+          "const": "G6_PRODUCTION_DATA"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "extensions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  }
+}

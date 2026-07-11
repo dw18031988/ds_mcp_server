@@ -9,3 +9,5 @@ yarn-error.log*
 pnpm-debug.log*
 temp.txt
 output/
+.vercel
+.env*
