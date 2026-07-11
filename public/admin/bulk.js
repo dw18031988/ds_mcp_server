@@ -1,6 +1,7 @@
 const TOKEN_KEY = "dw_agentops_api_token";
 
 const selectedTaskIds = new Set();
+const selectedLinkIds = new Set();
 const selectedWorkflowTaskIds = new Set();
 let workflows = [];
 let selectedWorkflowId = null;
@@ -18,6 +19,7 @@ const elements = {
   bulkLinkButton: document.querySelector("#bulkLinkButton"),
   bulkDeleteButton: document.querySelector("#bulkDeleteButton"),
   tasksList: document.querySelector("#tasksList"),
+  taskDetail: document.querySelector("#taskDetail"),
   createWorkflowForm: document.querySelector("#createWorkflowForm"),
   refreshWorkflowsButton: document.querySelector("#refreshWorkflowsButton"),
   workflowsList: document.querySelector("#workflowsList"),
@@ -255,6 +257,37 @@ elements.bulkDeleteButton.addEventListener("click", async () => {
   } catch (error) {
     showToast(error.message, true);
   }
+});
+
+elements.taskDetail.addEventListener("change", (event) => {
+  const checkbox = event.target.closest("[data-link-id]");
+  if (!checkbox) return;
+  if (checkbox.checked) selectedLinkIds.add(checkbox.dataset.linkId);
+  else selectedLinkIds.delete(checkbox.dataset.linkId);
+});
+
+elements.taskDetail.addEventListener("click", async (event) => {
+  if (!event.target.closest("#bulkDeleteLinksButton")) return;
+  try {
+    const linkIds = [...selectedLinkIds];
+    if (linkIds.length === 0) throw new Error("Select at least one task link");
+    const result = await request("/api/task-links/bulk", {
+      method: "DELETE",
+      body: JSON.stringify({ link_ids: linkIds })
+    });
+    for (const item of result.results || []) {
+      if (item.ok && item.id) selectedLinkIds.delete(item.id);
+    }
+    reportBatch("Bulk link removal", result);
+    refreshTasks();
+  } catch (error) {
+    showToast(error.message, true);
+  }
+});
+
+new MutationObserver(() => selectedLinkIds.clear()).observe(elements.taskDetail, {
+  childList: true,
+  subtree: true
 });
 
 function workflowCard(workflow) {
