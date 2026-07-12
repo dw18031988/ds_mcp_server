@@ -164,6 +164,25 @@ function expiresAtIso(secondsFromNow: number): string {
   return new Date(Date.now() + secondsFromNow * 1000).toISOString();
 }
 
+function isExpired(isoTimestamp: string, nowMs = Date.now()): boolean {
+  return new Date(isoTimestamp).getTime() <= nowMs;
+}
+
+export function refreshTokenExpiresAtIso(
+  createdAt: string,
+  ttlSeconds = DEFAULT_REFRESH_TOKEN_TTL_SECONDS
+): string {
+  return new Date(new Date(createdAt).getTime() + ttlSeconds * 1000).toISOString();
+}
+
+export function isRefreshTokenExpired(
+  createdAt: string,
+  nowMs = Date.now(),
+  ttlSeconds = DEFAULT_REFRESH_TOKEN_TTL_SECONDS
+): boolean {
+  return isExpired(refreshTokenExpiresAtIso(createdAt, ttlSeconds), nowMs);
+}
+
 function hasSupabase(config: AppConfig): boolean {
   return isSupabaseConfigured(config);
 }
@@ -422,7 +441,7 @@ export async function exchangeOAuthAuthorizationCode(
     authCode.client_id !== input.clientId ||
     authCode.redirect_uri !== input.redirectUri ||
     authCode.used_at ||
-    new Date(authCode.expires_at).getTime() <= Date.now() ||
+    isExpired(authCode.expires_at) ||
     authCode.code_challenge_method !== "S256"
   ) {
     return { ok: false, error: "invalid_grant" };
@@ -450,6 +469,7 @@ export async function exchangeOAuthAuthorizationCode(
   const accessTokenHash = sha256Base64Url(accessToken);
   const refreshTokenHash = sha256Base64Url(refreshToken);
   const expiresAt = expiresAtIso(DEFAULT_ACCESS_TOKEN_TTL_SECONDS);
+  const createdAt = nowIso();
 
   const { error: tokenError } = await supabase.from(OAUTH_TOKENS_TABLE).insert({
     access_token_hash: accessTokenHash,
@@ -458,7 +478,7 @@ export async function exchangeOAuthAuthorizationCode(
     scope: authCode.scope,
     expires_at: expiresAt,
     revoked_at: null,
-    created_at: nowIso(),
+    created_at: createdAt,
     last_used_at: null
   });
 
@@ -512,7 +532,7 @@ export async function refreshOAuthAccessToken(
     !token ||
     token.client_id !== input.clientId ||
     token.revoked_at ||
-    new Date(token.expires_at).getTime() <= Date.now()
+    isRefreshTokenExpired(token.created_at)
   ) {
     return { ok: false, error: "invalid_grant" };
   }
@@ -522,6 +542,7 @@ export async function refreshOAuthAccessToken(
   const accessTokenHash = sha256Base64Url(accessToken);
   const newRefreshTokenHash = sha256Base64Url(newRefreshToken);
   const expiresAt = expiresAtIso(DEFAULT_ACCESS_TOKEN_TTL_SECONDS);
+  const createdAt = nowIso();
 
   const { error: insertError } = await supabase.from(OAUTH_TOKENS_TABLE).insert({
     access_token_hash: accessTokenHash,
@@ -530,7 +551,7 @@ export async function refreshOAuthAccessToken(
     scope: token.scope,
     expires_at: expiresAt,
     revoked_at: null,
-    created_at: nowIso(),
+    created_at: createdAt,
     last_used_at: null
   });
 
@@ -580,7 +601,7 @@ export async function verifyOAuthAccessToken(
   if (
     !token ||
     token.revoked_at ||
-    new Date(token.expires_at).getTime() <= Date.now()
+    isExpired(token.expires_at)
   ) {
     return undefined;
   }

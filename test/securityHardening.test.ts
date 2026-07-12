@@ -6,7 +6,9 @@ import { loadConfig, type AppConfig } from "../src/config.js";
 import { authorizeRoute } from "../src/security/auth.js";
 import {
   buildOAuthMetadataJson,
-  buildOAuthProtectedResourceJson
+  buildOAuthProtectedResourceJson,
+  isRefreshTokenExpired,
+  refreshTokenExpiresAtIso
 } from "../src/security/oauth.js";
 import { buildSecurityPosture } from "../src/security/posture.js";
 import {
@@ -148,6 +150,23 @@ test("builds protected resource metadata for resource-scoped paths", () => {
     resource: string;
   };
   assert.equal(protectedMetadata.resource, "https://example.com/mcp");
+});
+
+test("computes refresh token expiry 30 days from creation", () => {
+  const createdAt = "2026-07-13T00:00:00.000Z";
+  assert.equal(
+    refreshTokenExpiresAtIso(createdAt),
+    "2026-08-12T00:00:00.000Z"
+  );
+});
+
+test("expires refresh tokens after 30 days while allowing younger tokens", () => {
+  const createdAt = "2026-07-13T00:00:00.000Z";
+  const justBeforeExpiry = Date.parse("2026-08-11T23:59:59.999Z");
+  const atExpiry = Date.parse("2026-08-12T00:00:00.000Z");
+
+  assert.equal(isRefreshTokenExpired(createdAt, justBeforeExpiry), false);
+  assert.equal(isRefreshTokenExpired(createdAt, atExpiry), true);
 });
 
 test("treats resource-scoped protected resource metadata routes as public", () => {
