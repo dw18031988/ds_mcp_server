@@ -254,7 +254,7 @@ export function createMcpServer(config: AppConfig): McpServer {
   );
 
   server.registerTool(
-    "github_create_branch"}]}
+    "github_create_branch",
     {
       title: "Create GitHub branch",
       description:
