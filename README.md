@@ -25,6 +25,8 @@ GitHub MCP tools:
 |---|---|---|
 | `github_get_repo` | read | Read allowlisted repo metadata |
 | `github_read_file` | read | Read UTF-8 file content |
+| `github_list_tree` | read | List repository tree for a branch, tag, or commit ref |
+| `github_read_binary_file` | read | Read file bytes as base64 for binary governance/package files |
 | `github_create_branch` | write | Create guarded branch from base branch |
 | `github_upsert_file` | write | Create/update file on guarded non-main branch |
 | `github_create_pr` | write | Create pull request |
@@ -39,7 +41,9 @@ REST endpoints for GPT Actions:
 | `GET` | `/api/design-requests/{request_id}` | Fetch design request by ID |
 | `POST` | `/api/agent-results` | Submit final agent review result |
 | `GET` | `/api/github/repos/{owner}/{repo}` | Read repo metadata |
-| `GET` | `/api/github/repos/{owner}/{repo}/files?path=...&ref=...` | Read file |
+| `GET` | `/api/github/repos/{owner}/{repo}/files?path=...&ref=...` | Read UTF-8 file |
+| `GET` | `/api/github/repos/{owner}/{repo}/tree?ref=...&recursive=1` | List repository tree |
+| `GET` | `/api/github/repos/{owner}/{repo}/binary-file?path=...&ref=...` | Read file as base64 bytes |
 | `POST` | `/api/github/repos/{owner}/{repo}/branches` | Create branch |
 | `POST` | `/api/github/repos/{owner}/{repo}/files` | Create/update file |
 | `POST` | `/api/github/repos/{owner}/{repo}/pull-requests` | Create PR |
@@ -202,6 +206,8 @@ Guardrails:
 - File paths cannot start with /, contain .., or use Windows backslash.
 - No merge/delete/force-push/secret-management endpoints are exposed.
 ```
+
+E2E governance bootstrap can reconstruct `.governance/**` from a protected base SHA by listing the repository tree and reading manifest-listed text or binary files at that SHA. User-uploaded governance archives are a fallback, not the normal path.
 
 ## GitHub CI webhook setup
 

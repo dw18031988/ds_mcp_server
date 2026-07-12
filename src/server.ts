@@ -25,7 +25,9 @@ import {
   githubDownloadWorkflowArtifactZip,
   githubGetRepo,
   githubGetWorkflowRuns,
+  githubListTree,
   githubListWorkflowRunArtifacts,
+  githubReadBinaryFile,
   githubReadFile,
   githubUpsertFile
 } from "./tools/githubClient.js";
@@ -1054,6 +1056,8 @@ function getCapabilities() {
       "ds_submit_agent_result",
       "github_get_repo",
       "github_read_file",
+      "github_list_tree",
+      "github_read_binary_file",
       "github_create_branch",
       "github_upsert_file",
       "github_create_pr",
@@ -1087,6 +1091,8 @@ function getCapabilities() {
       "/api/agent-results",
       "/api/github/repos/{owner}/{repo}",
       "/api/github/repos/{owner}/{repo}/files",
+      "/api/github/repos/{owner}/{repo}/tree",
+      "/api/github/repos/{owner}/{repo}/binary-file",
       "/api/github/repos/{owner}/{repo}/branches",
       "/api/github/repos/{owner}/{repo}/pull-requests",
       "/api/github/repos/{owner}/{repo}/pull-requests/{pr_number}/comments",
@@ -1494,6 +1500,42 @@ async function handleGitHubRestApi(
         200,
         await githubReadFile(config, {
           ...repoInput(fileMatch),
+          path,
+          ref
+        })
+      );
+      return true;
+    }
+
+    const treeMatch = repoRoute(url, "tree");
+
+    if (req.method === "GET" && treeMatch) {
+      const recursiveParam = url.searchParams.get("recursive");
+      const recursive = recursiveParam === null
+        ? undefined
+        : !["0", "false", "no"].includes(recursiveParam.toLowerCase());
+      sendJson(
+        res,
+        200,
+        await githubListTree(config, {
+          ...repoInput(treeMatch),
+          ref: url.searchParams.get("ref") || undefined,
+          recursive
+        })
+      );
+      return true;
+    }
+
+    const binaryFileMatch = repoRoute(url, "binary-file");
+
+    if (req.method === "GET" && binaryFileMatch) {
+      const path = url.searchParams.get("path") || "";
+      const ref = url.searchParams.get("ref") || undefined;
+      sendJson(
+        res,
+        200,
+        await githubReadBinaryFile(config, {
+          ...repoInput(binaryFileMatch),
           path,
           ref
         })

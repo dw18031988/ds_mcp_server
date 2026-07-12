@@ -11,7 +11,9 @@ import {
   githubDownloadWorkflowArtifactZip,
   githubGetRepo,
   githubGetWorkflowRuns,
+  githubListTree,
   githubListWorkflowRunArtifacts,
+  githubReadBinaryFile,
   githubReadFile,
   githubUpsertFile,
   type GitHubBinaryResult
@@ -197,6 +199,40 @@ export function createMcpServer(config: AppConfig): McpServer {
       annotations: { readOnlyHint: true }
     },
     async (input) => textOutput(await githubReadFile(config, input))
+  );
+
+  server.registerTool(
+    "github_list_tree",
+    {
+      title: "List GitHub repository tree",
+      description:
+        "List a repository tree for a branch, tag, or commit ref. Use this to discover governance package files before reading them.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        ref: z.string().optional(),
+        recursive: z.boolean().optional()
+      },
+      annotations: { readOnlyHint: true }
+    },
+    async (input) => textOutput(await githubListTree(config, input))
+  );
+
+  server.registerTool(
+    "github_read_binary_file",
+    {
+      title: "Read GitHub binary file",
+      description:
+        "Read a file from an allowlisted GitHub repository as base64 bytes. Use this for binary governance artifacts such as DOCX files.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        path: z.string().min(1),
+        ref: z.string().optional()
+      },
+      annotations: { readOnlyHint: true }
+    },
+    async (input) => textOutput(await githubReadBinaryFile(config, input))
   );
 
   server.registerTool(
