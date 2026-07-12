@@ -54,6 +54,7 @@ import {
   exchangeOAuthAuthorizationCode,
   getOAuthClientRecord,
   parseOAuthBasicClientAuth,
+  resolveOAuthIssuer,
   revokeOAuthToken,
   registerOAuthClient,
   refreshOAuthAccessToken
@@ -540,6 +541,7 @@ async function handleOAuthRequests(
     if (action === "deny" || action === "cancel") {
       const denied = new URL(redirectUri);
       denied.searchParams.set("error", "access_denied");
+      denied.searchParams.set("iss", resolveOAuthIssuer(config, requestBase));
       if (state) denied.searchParams.set("state", state);
       res.writeHead(302, {
         Location: denied.toString(),
@@ -562,6 +564,7 @@ async function handleOAuthRequests(
 
       const approved = new URL(redirectUri);
       approved.searchParams.set("code", authorizationCode.code);
+      approved.searchParams.set("iss", resolveOAuthIssuer(config, requestBase));
       if (state) approved.searchParams.set("state", state);
 
       res.writeHead(302, {
