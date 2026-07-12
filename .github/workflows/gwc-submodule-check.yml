@@ -1,0 +1,49 @@
+name: GWC Submodule Check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  gwc-submodule-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout without submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Check GWC governance submodule
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ ! -f .gitmodules ]; then
+            echo "::notice::.gitmodules not present yet; follow docs/GWC_SUBMODULE_SETUP.md"
+            exit 0
+          fi
+
+          if ! git config --file .gitmodules --get-regexp '^submodule\..*\.path$' | grep -q '^submodule\..*\.path .gwc/gwc$'; then
+            echo "::error::Expected GWC submodule path .gwc/gwc in .gitmodules"
+            exit 1
+          fi
+
+          echo "GWC submodule path is configured. Attempting to initialize."
+          if ! git submodule update --init --recursive .gwc/gwc; then
+            echo "::warning::Could not fetch .gwc/gwc submodule. If GWC is private, add a repository secret with a GitHub token that can read the GWC repo. Passing this readiness PR without blocking."
+            exit 0
+          fi
+
+          git submodule status --recursive
+
+          test -f .gwc/gwc/docs/AGENT_ENTRYPOINT.md
+          test -f .gwc/gwc/docs/MAIN_WORKFLOW.md
+          test -f .gwc/gwc/docs/EDGE_CASE_MATRIX.md
+          test -f .gwc/gwc/projects/ds-mcp/project-profile.yaml
+          test -f .gwc/gwc/projects/ds-mcp/project-instructions.md
+          test -f .gwc/gwc/projects/ds-mcp/project-extension.md
+          test -f .gwc/gwc/projects/ds-mcp/admin-task-claim-rule.md
+
+          echo "GWC submodule check passed."
