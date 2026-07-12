@@ -6,10 +6,17 @@ import { loadConfig, type AppConfig } from "../src/config.js";
 import { authorizeRoute } from "../src/security/auth.js";
 import { buildOAuthMetadataJson } from "../src/security/oauth.js";
 import { buildSecurityPosture } from "../src/security/posture.js";
-import { acquireRateLimit } from "../src/security/rateLimit.js";
+import {
+  acquireRateLimit,
+  buildRateLimitBucketKey,
+  buildRateLimitRpcArgs
+} from "../src/security/rateLimit.js";
 import { redactText, redactValue } from "../src/security/redaction.js";
 import { resolveRateLimitPolicy, resolveRoutePolicy } from "../src/security/routePolicy.js";
-import { validateSecurityStartup } from "../src/security/startupValidation.js";
+import {
+  validateSecurityRuntimeDependencies,
+  validateSecurityStartup
+} from "../src/security/startupValidation.js";
 import { PayloadTooLargeError, readRawBody } from "../src/security/requestLimits.js";
 import type { IncomingMessage } from "node:http";
 
@@ -180,6 +187,26 @@ test("applies memory rate limiting in relaxed mode", async () => {
     assert.equal(second.limit, 1);
     assert.ok(second.retryAfterSeconds >= 1);
   }
+});
+
+test("builds rate limit rpc args with the postgres function parameter names", () => {
+  assert.deepEqual(buildRateLimitRpcArgs("bucket", 60_000, 10), {
+    p_bucket_key: "bucket",
+    p_window_ms: 60_000,
+    p_max_requests: 10
+  });
+});
+
+test("builds json-safe bucket keys for the rate limit rpc", () => {
+  assert.equal(
+    buildRateLimitBucketKey("oauth.token", "principal", "127.0.0.1"),
+    "[\"oauth.token\",\"principal\",\"127.0.0.1\"]"
+  );
+});
+
+test("skips runtime dependency probes outside strict supabase mode", async () => {
+  const result = await validateSecurityRuntimeDependencies(baseConfig());
+  assert.deepEqual(result, { ok: true, issues: [] });
 });
 
 test("redacts secrets in structured data and text", () => {

@@ -23,7 +23,7 @@ The admin page also includes a "Check env issues" modal that lists missing or br
 
 For local startup, the server automatically loads `.env` and `.env.local` if they exist in the project root.
 
-If strict mode is enabled locally before the `security_rate_limit_acquire` RPC is deployed, the server falls back to in-memory rate limiting instead of failing every request. Production still expects the RPC to exist.
+If strict mode is enabled locally before the `security_rate_limit_acquire` RPC is deployed, the server falls back to in-memory rate limiting instead of failing every request. Production expects the rate-limit RPC and OAuth tables to exist on the configured Supabase project, and startup now fails fast if the URL/key pair or schema is wrong.
 
 ## Database profiles
 

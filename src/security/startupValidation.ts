@@ -1,4 +1,6 @@
 import type { AppConfig } from "../config.js";
+import { getSupabaseClient, isSupabaseConfigured } from "../db/supabaseClient.js";
+import { buildRateLimitRpcArgs } from "./rateLimit.js";
 import { redactValue } from "./redaction.js";
 
 export type SecurityStartupSummary = {
@@ -64,6 +66,45 @@ export function validateSecurityStartup(config: AppConfig): {
   };
 }
 
+export async function validateSecurityRuntimeDependencies(config: AppConfig): Promise<{
+  ok: boolean;
+  issues: string[];
+}> {
+  if (config.securityEnforcement !== "strict" || !isSupabaseConfigured(config)) {
+    return { ok: true, issues: [] };
+  }
+
+  const issues: string[] = [];
+  const supabase = getSupabaseClient(config);
+
+  const { error: oauthError } = await supabase
+    .from("mcp_oauth_clients")
+    .select("client_id")
+    .limit(1);
+
+  if (oauthError) {
+    issues.push(`OAuth persistence check failed: ${oauthError.message}`);
+  }
+
+  const { error: rateLimitError } = await supabase.rpc(
+    "security_rate_limit_acquire",
+    buildRateLimitRpcArgs("__startup_probe__", 60_000, 1)
+  );
+
+  if (rateLimitError) {
+    issues.push(`Rate limit RPC check failed: ${rateLimitError.message}`);
+  }
+
+  return {
+    ok: issues.length === 0,
+    issues: redactValue(issues)
+  };
+}
+
 export function formatSecurityStartupError(issues: string[], summary: SecurityStartupSummary): string {
   return `Security startup validation failed: ${issues.join("; ")} | summary=${JSON.stringify(redactValue(summary))}`;
+}
+
+export function formatSecurityRuntimeStartupError(issues: string[]): string {
+  return `Security runtime dependency validation failed: ${redactValue(issues).join("; ")}`;
 }

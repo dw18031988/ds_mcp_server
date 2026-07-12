@@ -17,8 +17,31 @@ function nowMs(): number {
   return Date.now();
 }
 
-function bucketKey(routeId: string, principalId: string, clientKey: string): string {
-  return `${routeId}\u0000${principalId}\u0000${clientKey}`;
+export function buildRateLimitBucketKey(
+  routeId: string,
+  principalId: string,
+  clientKey: string
+): string {
+  return JSON.stringify([routeId, principalId, clientKey]);
+}
+
+export function buildRateLimitRpcArgs(key: string, windowMs: number, maxRequests: number): {
+  p_bucket_key: string;
+  p_window_ms: number;
+  p_max_requests: number;
+} {
+  return {
+    p_bucket_key: key,
+    p_window_ms: windowMs,
+    p_max_requests: maxRequests
+  };
+}
+
+function isRecoverableRateLimitError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /could not find the function|schema cache|does not exist|security_rate_limit_acquire/i.test(
+    message
+  );
 }
 
 function memoryAcquire(key: string, windowMs: number, maxRequests: number): RateLimitDecision {
@@ -62,15 +85,14 @@ async function supabaseAcquire(
   maxRequests: number
 ): Promise<RateLimitDecision> {
   const supabase = getSupabaseClient(config);
-  const { data, error } = await supabase.rpc("security_rate_limit_acquire", {
-    bucket_key: key,
-    window_ms: windowMs,
-    max_requests: maxRequests
-  });
+  const { data, error } = await supabase.rpc(
+    "security_rate_limit_acquire",
+    buildRateLimitRpcArgs(key, windowMs, maxRequests)
+  );
 
   if (error) {
     const message = error.message || "unknown error";
-    const missingRpc = /could not find the function|schema cache|does not exist|security_rate_limit_acquire/i.test(message);
+    const missingRpc = isRecoverableRateLimitError(error);
 
     if (missingRpc && config.runtimeMode !== "production") {
       if (!loggedLocalFallbackWarning) {
@@ -120,7 +142,7 @@ export async function acquireRateLimit(
     maxRequests?: number;
   }
 ): Promise<RateLimitDecision> {
-  const key = bucketKey(input.routeId, input.principalId, input.clientKey);
+  const key = buildRateLimitBucketKey(input.routeId, input.principalId, input.clientKey);
   const windowMs = input.windowMs ?? config.rateLimitWindowMs;
   const maxRequests = input.maxRequests ?? config.rateLimitMaxRequests;
 

@@ -60,7 +60,9 @@ import {
 } from "./security/oauth.js";
 import { resolveRateLimitPolicy, resolveRoutePolicy } from "./security/routePolicy.js";
 import {
+  formatSecurityRuntimeStartupError,
   formatSecurityStartupError,
+  validateSecurityRuntimeDependencies,
   validateSecurityStartup
 } from "./security/startupValidation.js";
 import { redactValue } from "./security/redaction.js";
@@ -77,6 +79,12 @@ const publicRoot = resolve(process.cwd(), "public");
 
 if (!securityStartup.ok) {
   console.error(formatSecurityStartupError(securityStartup.issues, securityStartup.summary));
+  process.exit(1);
+}
+
+const securityRuntime = await validateSecurityRuntimeDependencies(config);
+if (!securityRuntime.ok) {
+  console.error(formatSecurityRuntimeStartupError(securityRuntime.issues));
   process.exit(1);
 }
 
