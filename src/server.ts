@@ -188,8 +188,8 @@ function localAdminBootstrapScript(): string {
     `})();`;
 }
 
-function inlineStyleContentSecurityPolicy(formActionOrigin?: string): string {
-  const formAction = formActionOrigin ? `'self' ${formActionOrigin}` : "'self'";
+function inlineStyleContentSecurityPolicy(allowHttpsFormAction = false): string {
+  const formAction = allowHttpsFormAction ? "'self' https:" : "'self'";
   return [
     "default-src 'self'",
     "base-uri 'self'",
@@ -303,7 +303,6 @@ function renderOAuthConsentPage(input: {
   resource?: string;
   codeChallenge: string;
   codeChallengeMethod: string;
-  authorizeActionUrl: string;
 }): string {
   return `<!doctype html>
 <html lang="en">
@@ -333,7 +332,7 @@ function renderOAuthConsentPage(input: {
         <div><strong>Redirect URI:</strong> <code>${escapeHtml(input.redirectUri)}</code></div>
         <div><strong>Scope:</strong> <code>${escapeHtml(input.scope)}</code></div>
       </div>
-      <form method="post" action="${escapeHtml(input.authorizeActionUrl)}">
+      <form method="post">
         <input type="hidden" name="response_type" value="${escapeHtml(input.responseType)}" />
         <input type="hidden" name="client_id" value="${escapeHtml(input.clientId)}" />
         <input type="hidden" name="redirect_uri" value="${escapeHtml(input.redirectUri)}" />
@@ -345,7 +344,7 @@ function renderOAuthConsentPage(input: {
         <input type="hidden" name="action" value="approve" />
         <div class="actions">
           <button class="primary" type="submit">Authorize</button>
-          <button class="secondary" type="submit" formaction="${escapeHtml(input.authorizeActionUrl)}" formmethod="post" name="action" value="deny">Cancel</button>
+          <button class="secondary" type="submit" name="action" value="deny">Cancel</button>
         </div>
       </form>
     </div>
@@ -535,13 +534,12 @@ async function handleOAuthRequests(
           state,
           resource,
           codeChallenge,
-          codeChallengeMethod,
-          authorizeActionUrl: `${resolveOAuthIssuer(config, requestBase)}/oauth/authorize`
+          codeChallengeMethod
         }),
         {
           "Cache-Control": "no-store",
           "X-Request-Id": requestId(req),
-          "Content-Security-Policy": inlineStyleContentSecurityPolicy(resolveOAuthIssuer(config, requestBase))
+          "Content-Security-Policy": inlineStyleContentSecurityPolicy(true)
         }
       );
       return true;

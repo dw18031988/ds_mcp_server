@@ -1,0 +1,63 @@
+schema_version: '1.0'
+project_id: ds-mcp
+package_version: 1.1.0
+generated_at: '2026-07-12T13:53:48Z'
+source:
+  repository: https://github.com/nhatnguyenquang1838-coder/gwc
+  commit_sha: eac7c1eb978d10bb064b23e05d047fb28d70be05
+  package_definition: projects/ds-mcp/package.yaml
+target:
+  mode: git-pr
+  target_repository: dw18031988/ds_mcp_server
+  target_path: .governance
+  default_branch: main
+  protected_branches:
+  - main
+  connector: DW
+  identity_status: verified
+  write_enabled: true
+canonical_policy:
+  path: core/Coding_Project_Governance_v1.0.md
+  version: '1.0'
+  sha256: 04cd33bbaff66f44917199e6bbb8355a1e956edb9c474e6c8e664ed8d0ed41c1
+files:
+- instruction_id: coding-project-governance
+  source_path: core/Coding_Project_Governance_v1.0.md
+  path: .governance/Coding_Project_Governance_v1.0.md
+  bytes: 28479
+  sha256: 04cd33bbaff66f44917199e6bbb8355a1e956edb9c474e6c8e664ed8d0ed41c1
+- instruction_id: e2e-draft-pr-delivery
+  source_path: core/E2E_DRAFT_PR_DELIVERY_RULE.md
+  path: .governance/E2E_DRAFT_PR_DELIVERY_RULE.md
+  bytes: 7961
+  sha256: f3dd31731c78880e615820d90ee2356bfb400393848249ac0d4b861e301498b4
+- instruction_id: local-agent-rule
+  source_path: core/LOCAL_AGENT_RULE.md
+  path: .governance/LOCAL_AGENT_RULE.md
+  bytes: 2711
+  sha256: c9627ee2982cf6d661621ca29e8725d1cc48b48298b968ba3e40286194f4a002
+- instruction_id: user-command-format
+  source_path: core/USER_COMMAND_FORMAT_RULE.md
+  path: .governance/USER_COMMAND_FORMAT_RULE.md
+  bytes: 1403
+  sha256: b2030c6aefecfc0042d923ff3c4fdd72b74533423c09b70f79ae0ff89d3e3ee4
+- instruction_id: admin-task-claim
+  source_path: projects/ds-mcp/admin-task-claim-rule.md
+  path: .governance/admin-task-claim-rule.md
+  bytes: 2236
+  sha256: 69218be1c2c9e29597322f98592681eee252277d1b0c711bd55d05a8df9c91b2
+- instruction_id: project-extension
+  source_path: projects/ds-mcp/project-extension.md
+  path: .governance/project-extension.md
+  bytes: 2486
+  sha256: f17a535333b6a62013a3d81ae06aaa0814b4ae731b2c52721ea7d8dbe8e3e27e
+- instruction_id: project-instructions
+  source_path: projects/ds-mcp/project-instructions.md
+  path: .governance/project-instructions.md
+  bytes: 24433
+  sha256: 45959db5d75f93679d489c97156dbc7a8324165889cef701146310b092c5e1e3
+- instruction_id: project-profile
+  source_path: projects/ds-mcp/project-profile.yaml
+  path: .governance/project-profile.yaml
+  bytes: 1880
+  sha256: 0c4f87fe2e9e20e61b35a65c6dff8d0a23bf357a5289937e48518824a77cec8f
