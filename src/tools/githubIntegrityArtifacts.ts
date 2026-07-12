@@ -43,17 +43,24 @@ type GitHubCommitResponse = {
   };
 };
 
+type GitHubTreeEntry = {
+  path?: string;
+  mode?: string;
+  type?: string;
+  sha?: string;
+  size?: number;
+  url?: string;
+};
+
 type GitHubTreeResponse = {
   sha: string;
   truncated?: boolean;
-  tree: Array<{
-    path?: string;
-    mode?: string;
-    type?: string;
-    sha?: string;
-    size?: number;
-    url?: string;
-  }>;
+  tree: GitHubTreeEntry[];
+};
+
+type SafeGitHubTreeEntry = GitHubTreeEntry & {
+  path: string;
+  type: string;
 };
 
 type GitHubBlobResponse = {
@@ -116,7 +123,7 @@ function isExcluded(path: string, excludedPaths: Set<string>): boolean {
   return excludedPaths.has(path);
 }
 
-function treeEntryLine(entry: NonNullable<GitHubTreeResponse["tree"][number]>): string {
+function treeEntryLine(entry: SafeGitHubTreeEntry): string {
   const mode = entry.mode ?? "000000";
   const type = entry.type ?? "unknown";
   const sha = entry.sha ?? "";
@@ -242,7 +249,7 @@ export async function githubGenerateIntegrityArtifacts(
   }
 
   const entries = tree.tree
-    .filter((entry): entry is Required<Pick<typeof entry, "path" | "type">> & typeof entry => Boolean(entry.path && entry.type))
+    .filter((entry): entry is SafeGitHubTreeEntry => Boolean(entry.path && entry.type))
     .sort((a, b) => a.path.localeCompare(b.path));
 
   const treeLines: string[] = [];
