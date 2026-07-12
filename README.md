@@ -182,10 +182,12 @@ Set these env vars before using GitHub tools:
 
 ```env
 GITHUB_TOKEN=github_pat_xxx
-GITHUB_ALLOWED_REPOS=dw18031988/ds_mcp_server,nhatnguyenquang1838-coder/rental_home
+GITHUB_ALLOWED_REPOS=dw18031988/ds_mcp_server,nhatnguyenquang1838-coder/rental_home,nhatnguyenquang1838-coder/gwc
 GITHUB_DEFAULT_BASE_BRANCH=main
 GITHUB_ALLOWED_BRANCH_PREFIXES=feature/,fix/,chore/,docs/,ai/
 ```
+
+This checked-in example does not change the Vercel production environment. Production activation requires a separately approved update to `DS_MCP_GITHUB_ALLOWED_REPOS` and a redeployment under the deployment authority gate.
 
 Recommended fine-grained PAT permissions for MVP:
 
