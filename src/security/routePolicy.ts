@@ -78,6 +78,10 @@ export function resolveRateLimitPolicy(method: string, pathname: string): Resolv
     return { windowMs: 60_000, maxRequests: 60, label: "security-admin" };
   }
 
+  if (normalizedMethod === "GET" && /^\/api\/workflows\/[^/]+\/status$/.test(pathname)) {
+    return { windowMs: 60_000, maxRequests: 120, label: "workflow-status-read" };
+  }
+
   if (pathname === "/admin" || pathname.startsWith("/admin/")) {
     return { windowMs: 60_000, maxRequests: 60, label: "security-admin" };
   }

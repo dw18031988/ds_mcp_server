@@ -23,6 +23,7 @@ test("getUrlDiagnostics returns safe canonical route metadata", () => {
   assert.equal(diagnostics.routes.health, "/health");
   assert.equal(diagnostics.routes.mcp, "/mcp");
   assert.equal(diagnostics.routes.diagnostics, "/api/diagnostics/url-map");
+  assert.equal(diagnostics.routes.workflowStatus, "/api/workflows/{workflow_id}/status");
   assert.equal(diagnostics.routes.githubRepo, "/api/github/repos/{owner}/{repo}");
   assert.equal(diagnostics.routes.githubWebhook, "/api/webhooks/github");
 });

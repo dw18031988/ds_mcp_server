@@ -75,6 +75,35 @@ paths:
                   - baseUrl
                   - routes
 
+  /api/workflows/{workflow_id}/status:
+    get:
+      summary: Xem compact workflow status
+      operationId: getWorkflowStatus
+      x-openai-isConsequential: false
+      parameters:
+        - name: workflow_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Compact workflow status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowStatusResponse"
+        "404":
+          description: Workflow khÃ´ng tá»“n táº¡i
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                required: [error]
+
   /api/design-requests/{request_id}:
     get:
       summary: Lấy design request theo request_id
@@ -531,6 +560,46 @@ components:
         backend_status:
           type: integer
       required: [ok, request_id, stored, forwarded_to_backend]
+
+    WorkflowStatusResponse:
+      type: object
+      properties:
+        workflow_id:
+          type: string
+        status:
+          type: string
+          enum: [running, waiting, succeeded, failed, cancelled, paused]
+        current_task:
+          type: object
+          properties:
+            id:
+              type: string
+            type:
+              type: string
+            status:
+              type: string
+            lease_expires_at:
+              type: string
+            needs_attention:
+              type: boolean
+          required: [id, type, status]
+        progress:
+          type: object
+          properties:
+            done:
+              type: integer
+            total:
+              type: integer
+          required: [done, total]
+        needs_attention:
+          type: boolean
+        attention_reasons:
+          type: array
+          items:
+            type: string
+        updated_at:
+          type: string
+      required: [workflow_id, status, progress, needs_attention, updated_at]
 
     GitHubRepo:
       type: object

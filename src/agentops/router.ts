@@ -33,6 +33,7 @@ import {
 } from "../asyncWorkflowStore.js";
 import { getOrchestrationDashboardSnapshot } from "../dashboard/orchestrationDashboard.js";
 import { listAgentHealth, listAgents, recordAgentHeartbeat, registerAgent } from "../agents/agentRegistry.js";
+import { getWorkflowStatus } from "./workflowStatusService.js";
 import {
   listCronSchedules,
   listRetryPolicies,
@@ -260,6 +261,19 @@ export async function handleAgentOpsRestApi(
       const body = createAsyncWorkflowSchema.parse(await readJsonBody(req));
       const output = await createAsyncWorkflow(config, body);
       sendJson(res, 202, { ok: true, workflow: output.workflow, current_task: output.task });
+      return true;
+    }
+
+    const workflowStatusMatch = url.pathname.match(/^\/api\/workflows\/([^/]+)\/status$/);
+
+    if (req.method === "GET" && workflowStatusMatch) {
+      const workflowId = decodePathValue(workflowStatusMatch[1]);
+      const workflowStatus = await getWorkflowStatus(config, workflowId);
+      if (!workflowStatus) {
+        sendJson(res, 404, { error: "Workflow not found" });
+        return true;
+      }
+      sendJson(res, 200, { ok: true, workflow_status: workflowStatus });
       return true;
     }
 

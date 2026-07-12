@@ -8,6 +8,7 @@ import {
   handleGithubCiEvent,
   submitAsyncTaskResult
 } from "../asyncWorkflowStore.js";
+import { getWorkflowStatus } from "./workflowStatusService.js";
 import {
   claimAsyncTaskSchema,
   createAsyncWorkflowSchema,
@@ -203,6 +204,17 @@ export function registerAgentOpsMcpTools(server: McpServer, config: AppConfig): 
       annotations: { readOnlyHint: true }
     },
     async ({ workflow_id }) => textOutput({ ok: true, workflow: await getAsyncWorkflow(config, workflow_id) ?? null })
+  );
+
+  server.registerTool(
+    "async_workflow_status",
+    {
+      title: "Get async workflow status",
+      description: "Get compact workflow status for polling clients.",
+      inputSchema: { workflow_id: z.string().min(1) },
+      annotations: { readOnlyHint: true }
+    },
+    async ({ workflow_id }) => textOutput({ ok: true, workflow_status: await getWorkflowStatus(config, workflow_id) ?? null })
   );
 
   server.registerTool(

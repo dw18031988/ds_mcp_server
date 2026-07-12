@@ -29,6 +29,17 @@ type WorkflowRow = AsyncWorkflow & {
   metadata_json?: JsonRecord;
 };
 
+type WorkflowStatusRow = {
+  id: string;
+  name: string;
+  source: AsyncWorkflow["source"];
+  status: AsyncWorkflow["status"];
+  current_task_id?: string | null;
+  context_json?: JsonRecord;
+  created_at: string;
+  updated_at: string;
+};
+
 type TaskRow = AsyncTask & {
   priority?: number;
   run_after?: string;
@@ -37,10 +48,38 @@ type TaskRow = AsyncTask & {
   completed_at?: string | null;
 };
 
+type WorkflowStatusTaskRow = {
+  id: string;
+  workflow_id: string;
+  parent_task_id?: string | null;
+  type: AsyncTaskType;
+  status: AsyncTaskStatus;
+  payload_json?: JsonRecord;
+  result_json?: JsonRecord | null;
+  error_json?: JsonRecord | null;
+  lease_owner?: string | null;
+  lease_expires_at?: string | null;
+  wait_key?: string | null;
+  retry_count?: number;
+  max_retries?: number;
+  created_at: string;
+  updated_at: string;
+};
+
 type TaskEventRow = AsyncTaskEvent & {
   actor_type?: string | null;
   actor_id?: string | null;
   payload_json?: JsonRecord;
+};
+
+type WorkflowStatusEventRow = {
+  id?: string;
+  workflow_id?: string;
+  task_id?: string | null;
+  event_type: string;
+  actor: AsyncTaskEvent["actor"];
+  data_json?: JsonRecord;
+  created_at: string;
 };
 
 export type RetryPolicy = {
@@ -60,6 +99,19 @@ function asWorkflow(row: WorkflowRow): AsyncWorkflow {
     status: row.status,
     current_task_id: row.current_task_id ?? undefined,
     context_json: row.context_json ?? row.input_json ?? {},
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+}
+
+function asWorkflowStatusWorkflow(row: WorkflowStatusRow): AsyncWorkflow {
+  return {
+    id: row.id,
+    name: row.name,
+    source: row.source,
+    status: row.status,
+    current_task_id: row.current_task_id ?? undefined,
+    context_json: row.context_json ?? {},
     created_at: row.created_at,
     updated_at: row.updated_at
   };
@@ -85,6 +137,26 @@ function asTask(row: TaskRow): AsyncTask {
   };
 }
 
+function asWorkflowStatusTask(row: WorkflowStatusTaskRow): AsyncTask {
+  return {
+    id: row.id,
+    workflow_id: row.workflow_id,
+    parent_task_id: row.parent_task_id ?? undefined,
+    type: row.type,
+    status: row.status,
+    payload_json: row.payload_json ?? {},
+    result_json: row.result_json ?? undefined,
+    error_json: row.error_json ?? undefined,
+    lease_owner: row.lease_owner ?? undefined,
+    lease_expires_at: row.lease_expires_at ?? undefined,
+    wait_key: row.wait_key ?? undefined,
+    retry_count: row.retry_count ?? 0,
+    max_retries: row.max_retries ?? 3,
+    created_at: row.created_at,
+    updated_at: row.updated_at
+  };
+}
+
 function asTaskEvent(row: TaskEventRow): AsyncTaskEvent {
   return {
     id: row.id,
@@ -93,6 +165,18 @@ function asTaskEvent(row: TaskEventRow): AsyncTaskEvent {
     event_type: row.event_type,
     actor: row.actor,
     data_json: row.data_json ?? row.payload_json ?? {},
+    created_at: row.created_at
+  };
+}
+
+function asWorkflowStatusEvent(row: WorkflowStatusEventRow): AsyncTaskEvent {
+  return {
+    id: row.id ?? createId("aevt"),
+    workflow_id: row.workflow_id ?? "",
+    task_id: row.task_id ?? undefined,
+    event_type: row.event_type,
+    actor: row.actor,
+    data_json: row.data_json ?? {},
     created_at: row.created_at
   };
 }
@@ -281,6 +365,41 @@ export async function getWorkflowRecord(
     workflow: asWorkflow(workflow as WorkflowRow),
     tasks: ((tasks ?? []) as TaskRow[]).map(asTask),
     events: ((events ?? []) as TaskEventRow[]).map(asTaskEvent)
+  };
+}
+
+export async function getWorkflowStatusRecord(
+  config: AppConfig,
+  workflowId: string
+): Promise<{ workflow: AsyncWorkflow; tasks: AsyncTask[]; events: AsyncTaskEvent[] } | undefined> {
+  const supabase = getSupabaseClient(config);
+  const { data: workflow, error: workflowError } = await supabase
+    .from("workflows")
+    .select("id, name, source, status, current_task_id, context_json, created_at, updated_at")
+    .eq("id", workflowId)
+    .maybeSingle();
+
+  if (workflowError) throw new Error(`Failed to get workflow status: ${workflowError.message}`);
+  if (!workflow) return undefined;
+
+  const { data: tasks, error: tasksError } = await supabase
+    .from("tasks")
+    .select("id, workflow_id, parent_task_id, type, status, payload_json, result_json, error_json, lease_owner, lease_expires_at, wait_key, retry_count, max_retries, created_at, updated_at")
+    .eq("workflow_id", workflowId)
+    .order("created_at", { ascending: true });
+  if (tasksError) throw new Error(`Failed to get workflow status tasks: ${tasksError.message}`);
+
+  const { data: events, error: eventsError } = await supabase
+    .from("task_events")
+    .select("id, workflow_id, task_id, event_type, actor, data_json, created_at")
+    .eq("workflow_id", workflowId)
+    .order("created_at", { ascending: true });
+  if (eventsError) throw new Error(`Failed to get workflow status events: ${eventsError.message}`);
+
+  return {
+    workflow: asWorkflowStatusWorkflow(workflow as WorkflowStatusRow),
+    tasks: ((tasks ?? []) as WorkflowStatusTaskRow[]).map(asWorkflowStatusTask),
+    events: ((events ?? []) as WorkflowStatusEventRow[]).map(asWorkflowStatusEvent)
   };
 }
 

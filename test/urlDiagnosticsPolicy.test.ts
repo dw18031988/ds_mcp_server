@@ -17,3 +17,11 @@ test("other unknown API routes remain disabled", () => {
     sensitive: true
   });
 });
+
+test("workflow status route remains protected", () => {
+  assert.deepEqual(resolveRoutePolicy("GET", "/api/workflows/awf_123/status"), {
+    routeId: "rest.sensitive",
+    policy: "rest_bearer",
+    sensitive: true
+  });
+});

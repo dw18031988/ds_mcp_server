@@ -10,6 +10,7 @@ export type UrlDiagnosticsResponse = {
     mcp: string;
     capabilities: "/api/capabilities";
     diagnostics: "/api/diagnostics/url-map";
+    workflowStatus: "/api/workflows/{workflow_id}/status";
     githubRepo: "/api/github/repos/{owner}/{repo}";
     githubFile: "/api/github/repos/{owner}/{repo}/files";
     branch: "/api/github/repos/{owner}/{repo}/branches";
@@ -38,6 +39,7 @@ export function getUrlDiagnostics(input: {
       mcp: input.mcpPath || "/mcp",
       capabilities: "/api/capabilities",
       diagnostics: "/api/diagnostics/url-map",
+      workflowStatus: "/api/workflows/{workflow_id}/status",
       githubRepo: "/api/github/repos/{owner}/{repo}",
       githubFile: "/api/github/repos/{owner}/{repo}/files",
       branch: "/api/github/repos/{owner}/{repo}/branches",

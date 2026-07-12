@@ -66,6 +66,10 @@ test("resolves route-specific rate limit policies", () => {
   assert.equal(oauthPolicy?.label, "oauth");
   assert.equal(oauthPolicy?.maxRequests, 10);
 
+  const workflowStatusPolicy = resolveRateLimitPolicy("GET", "/api/workflows/awf_1/status");
+  assert.equal(workflowStatusPolicy?.label, "workflow-status-read");
+  assert.equal(workflowStatusPolicy?.maxRequests, 120);
+
   const securityPolicy = resolveRateLimitPolicy("GET", "/api/security/posture");
   assert.equal(securityPolicy?.label, "security-admin");
   assert.equal(securityPolicy?.maxRequests, 60);

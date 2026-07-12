@@ -1018,7 +1018,8 @@ function getCapabilities() {
       "github_upsert_file",
       "github_create_pr",
       "github_get_workflow_runs",
-      "github_comment_pr"
+      "github_comment_pr",
+      "async_workflow_status"
     ],
     rest_paths: [
       "/api/capabilities",
@@ -1029,6 +1030,7 @@ function getCapabilities() {
       "/dashboard/upstream-calls",
       "/api/tasks",
       "/api/tasks/{task_id}",
+      "/api/workflows/{workflow_id}/status",
       "/api/tasks/{task_id}/links",
       "/api/tasks/{task_id}/transitions",
       "/api/tasks/{task_id}/events",
