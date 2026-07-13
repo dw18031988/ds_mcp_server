@@ -7,13 +7,42 @@
     <link rel="stylesheet" href="/admin/styles.css" />
   </head>
   <body>
-    <header class="topbar">
+    <section id="loginScreen" class="login-screen" hidden>
+      <div class="login-card">
+        <p class="eyebrow">DW AgentOps</p>
+        <h1>Admin login</h1>
+        <p class="login-copy">
+          Sign in with your Supabase account to unlock the admin console.
+        </p>
+
+        <form id="loginForm" class="login-form">
+          <label>
+            Email
+            <input id="loginEmail" type="email" placeholder="admin@example.com" autocomplete="email" />
+          </label>
+          <label>
+            Password
+            <input id="loginPassword" type="password" placeholder="Your password" autocomplete="current-password" />
+          </label>
+          <button type="submit">Sign in</button>
+        </form>
+
+        <div class="login-note">
+          <strong>Note:</strong> the signed-in session is stored locally in this browser only.
+        </div>
+        <p id="loginStatus" class="login-status">Sign in with Supabase</p>
+      </div>
+    </section>
+
+    <div id="appShell" hidden>
+      <header class="topbar">
       <div>
         <p class="eyebrow">DW AgentOps</p>
         <h1>Tasks Control</h1>
       </div>
       <div class="topbar-actions">
         <button id="configButton" type="button" class="secondary icon-button" aria-label="Open config">⚙</button>
+        <button id="logoutButton" type="button" class="secondary">Sign out</button>
       </div>
     </header>
 
@@ -259,13 +288,19 @@
           <div class="panel-heading">
             <div>
               <p class="eyebrow">Access</p>
-              <h3>Token</h3>
+              <h3>Session</h3>
             </div>
             <button id="refreshButton" type="button" class="secondary">Refresh</button>
           </div>
-          <div class="modal-token-grid">
-            <input id="apiToken" type="password" placeholder="REST API bearer token" autocomplete="off" />
-            <button id="saveTokenButton" type="button">Save token</button>
+          <div class="session-summary">
+            <div class="security-signal">
+              <strong>Signed in as</strong>
+              <span id="sessionUserValue">-</span>
+            </div>
+            <div class="security-signal">
+              <strong>Session token</strong>
+              <span id="sessionTokenValue">-</span>
+            </div>
           </div>
         </section>
 
@@ -358,6 +393,7 @@
     <script src="/admin/local-bootstrap.js" defer></script>
     <script src="/admin/app.js" type="module"></script>
     <script src="/admin/bulk.js" type="module"></script>
+    </div>
   </body>
 </html>
 

@@ -1,10 +1,11 @@
-const TOKEN_KEY = "dw_agentops_api_token";
+const TOKEN_KEY = "dw_agentops_admin_session_token";
 
 const selectedTaskIds = new Set();
 const selectedLinkIds = new Set();
 const selectedWorkflowTaskIds = new Set();
 let workflows = [];
 let selectedWorkflowId = null;
+let bulkInitialized = false;
 
 const elements = {
   bulkCreateTaskForm: document.querySelector("#bulkCreateTaskForm"),
@@ -319,6 +320,14 @@ async function loadWorkflows() {
   }
 }
 
+async function initializeBulk() {
+  if (bulkInitialized) return;
+  const token = localStorage.getItem(TOKEN_KEY) || "";
+  if (!token) return;
+  bulkInitialized = true;
+  await loadWorkflows();
+}
+
 function workflowTaskRows(tasks) {
   if (!tasks.length) return '<div class="event-item">No workflow tasks.</div>';
   return tasks.map((task) => {
@@ -508,4 +517,8 @@ elements.workflowDetail.addEventListener("click", async (event) => {
 });
 
 enhanceTaskCards();
-loadWorkflows().catch((error) => showToast(error.message, true));
+window.addEventListener("admin-auth-changed", (event) => {
+  if (!event.detail?.authenticated) return;
+  initializeBulk().catch((error) => showToast(error.message, true));
+});
+initializeBulk().catch((error) => showToast(error.message, true));

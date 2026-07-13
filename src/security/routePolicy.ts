@@ -1,6 +1,7 @@
 export type RouteAuthPolicy =
   | "public"
   | "rest_bearer"
+  | "admin_token"
   | "mcp_bearer"
   | "internal_token"
   | "webhook_signature"
@@ -172,11 +173,19 @@ export function resolveRoutePolicy(method: string, pathname: string): ResolvedRo
   }
 
   if (pathname === "/api/security/posture") {
-    return { routeId: "security.posture", policy: "rest_bearer", sensitive: true };
+    return { routeId: "security.posture", policy: "admin_token", sensitive: true };
+  }
+
+  if (pathname === "/api/dev/environment") {
+    return { routeId: "dev.environment", policy: "admin_token", sensitive: true };
+  }
+
+  if (pathname === "/api/admin/login" || pathname === "/api/admin/session") {
+    return { routeId: "admin.auth", policy: "public", sensitive: false };
   }
 
   if (isAdminAsset(pathname)) {
-    return { routeId: "admin.static", policy: "rest_bearer", sensitive: true };
+    return { routeId: "admin.static", policy: "public", sensitive: false };
   }
 
   if (isGitHubGatewayPath(pathname)) {

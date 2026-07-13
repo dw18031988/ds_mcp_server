@@ -93,6 +93,8 @@ export type AppConfig = {
   publicBaseUrl?: string;
   supabaseUrl?: string;
   supabaseServiceRoleKey?: string;
+  supabaseAnonKey?: string;
+  adminAllowedEmails: string[];
   runtimeMode: RuntimeMode;
   securityEnforcement: SecurityEnforcement;
   corsAllowedOrigins: string[];
@@ -264,6 +266,8 @@ export function loadConfig(): AppConfig {
     publicBaseUrl: appEnv("PUBLIC_BASE_URL") || (vercelUrl ? `https://${vercelUrl}` : undefined),
     supabaseUrl: activeProfile.supabaseUrl,
     supabaseServiceRoleKey: activeProfile.supabaseServiceRoleKey,
+    supabaseAnonKey: appEnv("SUPABASE_ANON_KEY") || undefined,
+    adminAllowedEmails: readCsv(appEnv("SUPABASE_ADMIN_ALLOWED_EMAILS")),
     runtimeMode: readRuntimeMode(appEnv("APP_RUNTIME_MODE")),
     securityEnforcement,
     corsAllowedOrigins,

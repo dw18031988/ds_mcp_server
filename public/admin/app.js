@@ -1,13 +1,5 @@
-﻿const TOKEN_KEY = "dw_agentops_api_token";
-const bootstrap = globalThis.__LOCAL_ADMIN_BOOTSTRAP__ || {};
-
-if (bootstrap.token) {
-  try {
-    localStorage.setItem(TOKEN_KEY, bootstrap.token);
-  } catch {
-    // Local bootstrap token is best-effort if storage is unavailable.
-  }
-}
+const TOKEN_KEY = "dw_agentops_admin_session_token";
+const LOGIN_ERROR_KEY = "dw_agentops_admin_login_error";
 
 const state = {
   tasks: [],
@@ -15,7 +7,9 @@ const state = {
   links: [],
   linksError: null,
   selectedTaskId: null,
-  token: localStorage.getItem(TOKEN_KEY) || bootstrap.token || "",
+  token: localStorage.getItem(TOKEN_KEY) || '',
+  user: null,
+  authState: localStorage.getItem(TOKEN_KEY) ? "restoring" : "logged_out",
   security: null,
   securityError: null,
   environment: null,
@@ -25,8 +19,15 @@ const state = {
 };
 
 const elements = {
-  apiToken: document.querySelector("#apiToken"),
-  saveTokenButton: document.querySelector("#saveTokenButton"),
+  loginScreen: document.querySelector("#loginScreen"),
+  appShell: document.querySelector("#appShell"),
+  loginForm: document.querySelector("#loginForm"),
+  loginEmail: document.querySelector("#loginEmail"),
+  loginPassword: document.querySelector("#loginPassword"),
+  logoutButton: document.querySelector("#logoutButton"),
+  loginStatus: document.querySelector("#loginStatus"),
+  sessionUserValue: document.querySelector("#sessionUserValue"),
+  sessionTokenValue: document.querySelector("#sessionTokenValue"),
   configButton: document.querySelector("#configButton"),
   refreshButton: document.querySelector("#refreshButton"),
   apiStatus: document.querySelector("#apiStatus"),
@@ -70,20 +71,29 @@ const elements = {
 const RUNTIME_MODES = ["local", "development", "staging", "production"];
 const MOBILE_VIEWS = ["progress", "tasks", "assign", "flow"];
 
-function syncBootstrapToken() {
-  const bootstrapToken = globalThis.__LOCAL_ADMIN_BOOTSTRAP__?.token || "";
-  const storedToken = localStorage.getItem(TOKEN_KEY) || "";
-  const nextToken = bootstrapToken || storedToken;
-
-  if (nextToken && nextToken !== state.token) {
-    state.token = nextToken;
-    elements.apiToken.value = nextToken;
-  }
-
-  return state.token;
+function hasToken() {
+  return Boolean(state.token.trim());
 }
 
-elements.apiToken.value = state.token;
+function syncAuthUi() {
+  const authenticated = hasToken();
+  const pending = state.authState === "restoring";
+  elements.loginScreen.hidden = authenticated;
+  elements.appShell.hidden = !authenticated;
+  elements.loginStatus.textContent = pending ? "Restoring session..." : authenticated ? "Ready" : "Sign in with Supabase";
+  if (authenticated) {
+    elements.sessionTokenValue.textContent = maskToken(state.token);
+    elements.sessionUserValue.textContent = state.user?.email || state.user?.id || "signed in";
+  } else {
+    elements.sessionTokenValue.textContent = "-";
+    elements.sessionUserValue.textContent = "-";
+  }
+  window.dispatchEvent(new CustomEvent("admin-auth-changed", {
+    detail: { authenticated, token: state.token }
+  }));
+}
+
+syncAuthUi();
 
 function isMobileViewport() {
   return window.matchMedia("(max-width: 860px)").matches;
@@ -114,7 +124,6 @@ function setMobileView(view) {
 }
 
 function headers() {
-  syncBootstrapToken();
   const output = { "Content-Type": "application/json" };
   if (state.token) output.Authorization = `Bearer ${state.token}`;
   return output;
@@ -149,6 +158,15 @@ async function request(path, options = {}) {
   }
 
   return body;
+}
+
+function clearLoginError() {
+  localStorage.removeItem(LOGIN_ERROR_KEY);
+}
+
+function setLoginError(message) {
+  localStorage.setItem(LOGIN_ERROR_KEY, message);
+  elements.loginStatus.textContent = message;
 }
 
 function escapeHtml(value) {
@@ -1103,6 +1121,11 @@ async function loadTasks() {
 }
 
 async function refreshAll() {
+  if (!hasToken()) {
+    syncAuthUi();
+    return;
+  }
+
   try {
     await Promise.all([loadCapabilities(), loadSecurity(), loadTasks(), loadTaskLinks()]);
     if (state.selectedTaskId) await selectTask(state.selectedTaskId);
@@ -1266,13 +1289,69 @@ async function switchEnvironment() {
   showToast(`Environment switched to ${runtimeMode} / ${dbTarget}`);
 }
 
-elements.saveTokenButton.addEventListener("click", () => {
-  state.token = elements.apiToken.value.trim();
-  if (state.token) localStorage.setItem(TOKEN_KEY, state.token);
-  else localStorage.removeItem(TOKEN_KEY);
-  showToast("Token saved locally");
-  refreshAll();
+elements.loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const email = elements.loginEmail.value.trim();
+  const password = elements.loginPassword.value;
+  if (!email || !password) {
+    showToast("Enter email and password", true);
+    return;
+  }
+
+  try {
+    elements.loginStatus.textContent = "Signing in...";
+    const response = await request("/api/admin/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password })
+    });
+    state.token = response.access_token;
+    state.user = response.user || null;
+    state.authState = "authenticated";
+    localStorage.setItem(TOKEN_KEY, state.token);
+    clearLoginError();
+    elements.loginPassword.value = "";
+    syncAuthUi();
+    showToast("Signed in");
+    await refreshAll();
+  } catch (error) {
+    setLoginError(error.message);
+    showToast(error.message, true);
+  }
 });
+
+elements.logoutButton.addEventListener("click", () => {
+  state.token = "";
+  state.user = null;
+  state.authState = "logged_out";
+  localStorage.removeItem(TOKEN_KEY);
+  elements.loginEmail.value = "";
+  elements.loginPassword.value = "";
+  clearLoginError();
+  syncAuthUi();
+  showToast("Signed out");
+});
+
+async function restoreSession() {
+  if (!state.token) {
+    syncAuthUi();
+    return;
+  }
+  try {
+    const response = await request("/api/admin/session", {
+      method: "POST"
+    });
+    state.user = response.user || null;
+    state.authState = "authenticated";
+    syncAuthUi();
+    await refreshAll();
+  } catch {
+    state.token = "";
+    state.user = null;
+    state.authState = "logged_out";
+    localStorage.removeItem(TOKEN_KEY);
+    syncAuthUi();
+  }
+}
 
 elements.configButton.addEventListener("click", async () => {
   try {
@@ -1428,7 +1507,9 @@ elements.taskDetail.addEventListener("submit", async (event) => {
 });
 
 renderMobileViewport();
-refreshAll();
+if (hasToken()) {
+  restoreSession();
+}
 
 window.addEventListener("resize", () => {
   renderMobileViewport();

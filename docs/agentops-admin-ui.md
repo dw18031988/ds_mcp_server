@@ -27,7 +27,7 @@ public/admin/app.js
 - Apply allowed workflow transitions returned by the task API.
 - Add task dependency links.
 - View task links and timeline events.
-- Store REST API bearer token in browser localStorage for admin API calls.
+- Sign in with Supabase Auth and store the session token in browser localStorage.
 
 ## Required backend
 
@@ -45,13 +45,15 @@ GET    /api/tasks/{task_id}/events
 
 ## Configuration
 
-If `REST_API_BEARER_TOKEN` is configured, paste the token into the UI header and click `Save token`.
+Admin users sign in with Supabase credentials through `/api/admin/login`, which returns a Supabase access token stored locally in the browser.
 
-The token is stored locally in the browser only. It is not sent anywhere except this server's `/api/*` endpoints as:
+The same session token is then sent to the admin and workflow endpoints as:
 
 ```text
-Authorization: Bearer <token>
+Authorization: Bearer <supabase_access_token>
 ```
+
+ChatGPT custom agents should use the OAuth endpoints under `/oauth/*` and call REST endpoints with the OAuth access token.
 
 ## Notes
 

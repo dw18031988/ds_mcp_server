@@ -5,6 +5,7 @@ import { extname, isAbsolute, relative, resolve } from "node:path";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ZodError } from "zod";
 import { loadConfig } from "./config.js";
+import { getSupabaseClient, isSupabaseConfigured } from "./db/supabaseClient.js";
 import { createMcpServer } from "./mcp.js";
 import {
   agentResultSchema,
@@ -171,22 +172,7 @@ function isAdminAssetPath(pathname: string): boolean {
 }
 
 function localAdminBootstrapScript(): string {
-  const token = config.restApiBearerToken || "";
-  const safeToken = JSON.stringify(token);
-  const safeTokenKey = JSON.stringify("dw_agentops_api_token");
-
-  return `globalThis.__LOCAL_ADMIN_BOOTSTRAP__ = globalThis.__LOCAL_ADMIN_BOOTSTRAP__ || {};` +
-    `(() => {` +
-    `const token = ${safeToken};` +
-    `const key = ${safeTokenKey};` +
-    `if (!token) return;` +
-    `try {` +
-    `localStorage.setItem(key, token);` +
-    `globalThis.__LOCAL_ADMIN_BOOTSTRAP__ = { token, key };` +
-    `} catch (error) {` +
-    `globalThis.__LOCAL_ADMIN_BOOTSTRAP__ = { token, key, error: String(error?.message || error) };` +
-    `}` +
-    `})();`;
+  return `globalThis.__LOCAL_ADMIN_BOOTSTRAP__ = globalThis.__LOCAL_ADMIN_BOOTSTRAP__ || {};`;
 }
 
 function inlineStyleContentSecurityPolicy(allowHttpsFormAction = false): string {
@@ -824,6 +810,46 @@ async function readRawBody(req: IncomingMessage): Promise<Buffer> {
 
 async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   return readJsonBodyWithLimit(req, config.maxJsonBodyBytes);
+}
+
+async function supabaseAuthUser(accessToken: string): Promise<{ id?: string; email?: string | null } | undefined> {
+  if (!isSupabaseConfigured(config) || !config.supabaseAnonKey) return undefined;
+  const supabase = getSupabaseClient({
+    ...config,
+    supabaseServiceRoleKey: config.supabaseAnonKey
+  });
+  const { data, error } = await supabase.auth.getUser(accessToken);
+  if (error || !data.user) return undefined;
+  return { id: data.user.id, email: data.user.email };
+}
+
+async function supabasePasswordLogin(email: string, password: string): Promise<{
+  access_token: string;
+  refresh_token: string;
+  expires_in: number;
+  token_type: string;
+  user?: { id?: string; email?: string | null };
+}> {
+  if (!isSupabaseConfigured(config) || !config.supabaseAnonKey) {
+    throw new Error("Supabase auth is not configured");
+  }
+
+  const supabase = getSupabaseClient({
+    ...config,
+    supabaseServiceRoleKey: config.supabaseAnonKey
+  });
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error || !data.session || !data.user) {
+    throw new Error(error?.message || "invalid_login");
+  }
+
+  return {
+    access_token: data.session.access_token,
+    refresh_token: data.session.refresh_token,
+    expires_in: data.session.expires_in,
+    token_type: data.session.token_type,
+    user: { id: data.user.id, email: data.user.email }
+  };
 }
 
 async function handleAdminStatic(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
@@ -1815,6 +1841,59 @@ async function handleSecurityApi(req: IncomingMessage, res: ServerResponse, url:
 }
 
 async function handleRestApi(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+  if (req.method === "POST" && url.pathname === "/api/admin/login") {
+    setCorsHeaders(req, res);
+    try {
+      const body = await readJsonBody(req) as { email?: string; password?: string };
+      const email = (body.email || "").trim();
+      const password = (body.password || "").trim();
+      if (!email || !password) {
+        sendJson(res, 400, { error: "email and password are required" });
+        return true;
+      }
+
+      const session = await supabasePasswordLogin(email, password);
+      const user = session.user || await supabaseAuthUser(session.access_token);
+      if (!user?.id) {
+        sendJson(res, 401, { error: "Unauthorized" });
+        return true;
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+        expires_in: session.expires_in,
+        token_type: session.token_type,
+        user
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Login failed";
+      sendJson(res, 401, { error: message });
+    }
+    return true;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/admin/session") {
+    setCorsHeaders(req, res);
+    const bearer = (req.headers.authorization || "").startsWith("Bearer ")
+      ? String(req.headers.authorization).slice("Bearer ".length).trim()
+      : "";
+    if (!bearer) {
+      sendJson(res, 401, { error: "Unauthorized" });
+      return true;
+    }
+
+    const user = await supabaseAuthUser(bearer);
+    if (!user?.id) {
+      sendJson(res, 401, { error: "Unauthorized" });
+      return true;
+    }
+
+    sendJson(res, 200, { ok: true, user });
+    return true;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/capabilities") {
     setCorsHeaders(req, res);
     sendJson(res, 200, getCapabilities());

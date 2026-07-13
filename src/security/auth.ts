@@ -10,6 +10,7 @@ export type Principal =
   | { type: "rest"; id: "shared-rest-token" }
   | { type: "mcp"; id: "shared-mcp-token" }
   | { type: "oauth"; id: string; scopes: string[] }
+  | { type: "admin"; id: string; email?: string }
   | { type: "internal"; id: "shared-internal-token" }
   | { type: "webhook"; id: "github-webhook" };
 
@@ -33,6 +34,50 @@ function bearerFromRequest(req: IncomingMessage): string | undefined {
   const authorization = headerValue(req, "authorization");
   if (!authorization?.startsWith("Bearer ")) return undefined;
   return authorization.slice("Bearer ".length).trim();
+}
+
+function adminEmailAllowed(config: AppConfig, email: string | undefined): boolean {
+  if (!email) return false;
+  if (config.adminAllowedEmails.length === 0) return true;
+  return config.adminAllowedEmails.some((allowed) => allowed.toLowerCase() === email.toLowerCase());
+}
+
+async function verifySupabaseAdminToken(config: AppConfig, bearer: string): Promise<Principal | undefined> {
+  if (!config.supabaseUrl || !config.supabaseAnonKey) return undefined;
+
+  const response = await fetch(`${config.supabaseUrl.replace(/\/+$/, "")}/auth/v1/user`, {
+    headers: {
+      apikey: config.supabaseAnonKey,
+      Authorization: `Bearer ${bearer}`
+    }
+  });
+
+  if (!response.ok) return undefined;
+
+  const user = await response.json() as { id?: string; email?: string | null };
+  if (!user.id || !adminEmailAllowed(config, user.email || undefined)) return undefined;
+
+  return { type: "admin", id: `supabase:${user.id}`, email: user.email || undefined };
+}
+
+async function principalFromBearer(config: AppConfig, bearer: string | undefined): Promise<Principal | undefined> {
+  if (!bearer) return undefined;
+
+  if (config.mcpBearerToken && constantTimeEquals(config.mcpBearerToken, bearer)) {
+    return { type: "mcp", id: "shared-mcp-token" };
+  }
+
+  if (config.restApiBearerToken && constantTimeEquals(config.restApiBearerToken, bearer)) {
+    return { type: "rest", id: "shared-rest-token" };
+  }
+
+  const oauthPrincipal = await verifyOAuthAccessToken(config, bearer);
+  if (oauthPrincipal) return oauthPrincipal;
+
+  const adminPrincipal = await verifySupabaseAdminToken(config, bearer);
+  if (adminPrincipal) return adminPrincipal;
+
+  return undefined;
 }
 
 function webhookSignatureMatches(secret: string, req: IncomingMessage): boolean {
@@ -64,27 +109,28 @@ export async function authorizeRoute(
   const bearer = bearerFromRequest(req);
 
   if (policy === "rest_bearer") {
-    if (!config.restApiBearerToken) {
+    const principal = await principalFromBearer(config, bearer);
+    if (principal && ["rest", "oauth", "admin"].includes(principal.type)) {
+      return { ok: true, principal };
+    }
+    if (!config.restApiBearerToken && !config.mcpBearerToken && !isSupabaseConfigured(config)) {
       return { ok: true, principal: { type: "public", id: "anonymous" } };
     }
+    return { ok: false, status: 401, error: "Unauthorized" };
+  }
 
-    if (!bearer || !constantTimeEquals(config.restApiBearerToken, bearer)) {
-      return { ok: false, status: 401, error: "Unauthorized" };
+  if (policy === "admin_token") {
+    const principal = await principalFromBearer(config, bearer);
+    if (principal && principal.type === "admin") {
+      return { ok: true, principal };
     }
-
-    return { ok: true, principal: { type: "rest", id: "shared-rest-token" } };
+    return { ok: false, status: 401, error: "Unauthorized" };
   }
 
   if (policy === "mcp_bearer") {
-    if (config.mcpBearerToken && bearer && constantTimeEquals(config.mcpBearerToken, bearer)) {
-      return { ok: true, principal: { type: "mcp", id: "shared-mcp-token" } };
-    }
-
-    if (bearer && isSupabaseConfigured(config)) {
-      const oauthPrincipal = await verifyOAuthAccessToken(config, bearer);
-      if (oauthPrincipal) {
-        return { ok: true, principal: oauthPrincipal };
-      }
+    const principal = await principalFromBearer(config, bearer);
+    if (principal && ["mcp", "oauth"].includes(principal.type)) {
+      return { ok: true, principal };
     }
 
     if (!config.mcpBearerToken && !isSupabaseConfigured(config)) {
