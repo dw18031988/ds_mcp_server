@@ -19,6 +19,7 @@ import {
   type GitHubBinaryResult
 } from "./tools/githubClient.js";
 import { registerGitHubFilePushTools } from "./tools/githubFilePushTools.js";
+import { githubGenerateIntegrityArtifacts } from "./tools/githubIntegrityArtifacts.js";
 import { writeAuditEvent } from "./tools/auditLog.js";
 import { registerAgentOpsMcpTools } from "./agentops/mcpTools.js";
 
@@ -233,6 +234,23 @@ export function createMcpServer(config: AppConfig): McpServer {
       annotations: { readOnlyHint: true }
     },
     async (input) => textOutput(await githubReadBinaryFile(config, input))
+  );
+
+  server.registerTool(
+    "github_generate_integrity_artifacts",
+    {
+      title: "Generate GitHub integrity artifacts",
+      description:
+        "Generate deterministic TREE.txt and SHA256SUMS.txt content server-side for an allowlisted repository/ref without returning raw archive bytes.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        ref: z.string().optional(),
+        exclude_paths: z.array(z.string().min(1)).optional()
+      },
+      annotations: { readOnlyHint: true }
+    },
+    async (input) => textOutput(await githubGenerateIntegrityArtifacts(config, input))
   );
 
   server.registerTool(

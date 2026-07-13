@@ -27,6 +27,7 @@ GitHub MCP tools:
 | `github_read_file` | read | Read UTF-8 file content |
 | `github_list_tree` | read | List repository tree for a branch, tag, or commit ref |
 | `github_read_binary_file` | read | Read file bytes as base64 for binary governance/package files |
+| `github_generate_integrity_artifacts` | read | Generate TREE.txt and SHA256SUMS.txt server-side without returning raw archives |
 | `github_create_branch` | write | Create guarded branch from base branch |
 | `github_upsert_file` | write | Create/update file on guarded non-main branch |
 | `github_create_pr` | write | Create pull request |
@@ -44,6 +45,7 @@ REST endpoints for GPT Actions:
 | `GET` | `/api/github/repos/{owner}/{repo}/files?path=...&ref=...` | Read UTF-8 file |
 | `GET` | `/api/github/repos/{owner}/{repo}/tree?ref=...&recursive=1` | List repository tree |
 | `GET` | `/api/github/repos/{owner}/{repo}/binary-file?path=...&ref=...` | Read file as base64 bytes |
+| `GET` | `/api/github/repos/{owner}/{repo}/integrity-artifacts?ref=...&exclude_path=...` | Generate TREE.txt and SHA256SUMS.txt server-side |
 | `POST` | `/api/github/repos/{owner}/{repo}/branches` | Create branch |
 | `POST` | `/api/github/repos/{owner}/{repo}/files` | Create/update file |
 | `POST` | `/api/github/repos/{owner}/{repo}/pull-requests` | Create PR |
@@ -65,6 +67,7 @@ https://ds-mcp-server-one.vercel.app
 | MCP connector | `https://ds-mcp-server-one.vercel.app/mcp` |
 | GitHub repo metadata | `https://ds-mcp-server-one.vercel.app/api/github/repos/{owner}/{repo}` |
 | GitHub files | `https://ds-mcp-server-one.vercel.app/api/github/repos/{owner}/{repo}/files` |
+| GitHub integrity artifacts | `https://ds-mcp-server-one.vercel.app/api/github/repos/{owner}/{repo}/integrity-artifacts` |
 | GitHub branches | `https://ds-mcp-server-one.vercel.app/api/github/repos/{owner}/{repo}/branches` |
 | GitHub pull requests | `https://ds-mcp-server-one.vercel.app/api/github/repos/{owner}/{repo}/pull-requests` |
 | GitHub workflow runs | `https://ds-mcp-server-one.vercel.app/api/github/repos/{owner}/{repo}/workflow-runs` |
@@ -210,6 +213,8 @@ Guardrails:
 ```
 
 E2E governance bootstrap can reconstruct `.governance/**` from a protected base SHA by listing the repository tree and reading manifest-listed text or binary files at that SHA. User-uploaded governance archives are a fallback, not the normal path.
+
+For repository integrity refresh flows, prefer `github_generate_integrity_artifacts` or `GET /api/github/repos/{owner}/{repo}/integrity-artifacts`. This computes `TREE.txt` and `SHA256SUMS.txt` server-side from Git tree/blob APIs and avoids returning raw repository ZIP/archive bytes to ChatGPT.
 
 ## GitHub CI webhook setup
 
