@@ -80,6 +80,7 @@ function syncAuthUi() {
   const authenticated = isAuthenticated();
   elements.loginScreen.hidden = authenticated;
   elements.appShell.hidden = !authenticated;
+  document.body.classList.toggle("auth-screen", !authenticated);
   elements.loginStatus.textContent = authenticated
     ? "Ready"
     : "Sign in with email/password or use Supabase SSO";
@@ -1311,7 +1312,7 @@ elements.loginForm.addEventListener("submit", async (event) => {
     state.authState = "authenticated";
     elements.loginPassword.value = "";
     syncAuthUi();
-    window.history.replaceState(null, "", "/admin#dashboard");
+    window.history.replaceState(null, "", "/admin");
     await refreshAll();
   } catch (error) {
     elements.loginStatus.textContent = error.message;
@@ -1328,7 +1329,7 @@ async function logout() {
   } finally {
     elements.loginEmail.value = "";
     elements.loginPassword.value = "";
-    window.location.assign("/admin");
+    window.location.assign("/admin/login");
   }
 }
 
@@ -1344,13 +1345,16 @@ async function restoreSession() {
     state.user = response.user || null;
     state.authState = "authenticated";
     syncAuthUi();
-    window.history.replaceState(null, "", "/admin#dashboard");
+    window.history.replaceState(null, "", "/admin");
     await refreshAll();
   } catch {
     state.user = null;
     state.token = "";
     state.authState = "logged_out";
     syncAuthUi();
+    if (window.location.pathname !== "/admin/login") {
+      window.history.replaceState(null, "", "/admin/login");
+    }
   }
 }
 

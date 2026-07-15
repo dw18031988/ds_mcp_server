@@ -947,6 +947,28 @@ async function handleAdminStatic(req: IncomingMessage, res: ServerResponse, url:
   if (req.method !== "GET" && req.method !== "HEAD") return false;
   if (!isAdminAssetPath(url.pathname)) return false;
 
+  if (url.pathname === "/admin/login") {
+    if (adminSessionTokenFromRequest(req)) {
+      res.writeHead(302, {
+        Location: "/admin",
+        "Cache-Control": "no-store",
+        "X-Request-Id": requestId(req)
+      });
+      res.end();
+      return true;
+    }
+  } else if (url.pathname === "/admin" || url.pathname === "/admin/") {
+    if (!adminSessionTokenFromRequest(req)) {
+      res.writeHead(302, {
+        Location: "/admin/login",
+        "Cache-Control": "no-store",
+        "X-Request-Id": requestId(req)
+      });
+      res.end();
+      return true;
+    }
+  }
+
   if (url.pathname === "/admin/local-bootstrap.js") {
     const body = Buffer.from(localAdminBootstrapScript(), "utf8");
     res.writeHead(200, {
@@ -965,7 +987,7 @@ async function handleAdminStatic(req: IncomingMessage, res: ServerResponse, url:
   }
 
   const relativePath =
-    url.pathname === "/admin" || url.pathname === "/admin/"
+    url.pathname === "/admin" || url.pathname === "/admin/" || url.pathname === "/admin/login"
       ? "admin/index.html"
       : `admin/${url.pathname.slice("/admin/".length)}`;
 
