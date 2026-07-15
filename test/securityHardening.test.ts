@@ -69,7 +69,7 @@ test("treats oauth routes as public", () => {
 
 test("treats security posture routes as protected", () => {
   const policy = resolveRoutePolicy("GET", "/api/security/posture");
-  assert.equal(policy.policy, "rest_bearer");
+  assert.equal(policy.policy, "admin_token");
   assert.equal(policy.sensitive, true);
 });
 
