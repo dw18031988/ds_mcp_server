@@ -10,6 +10,8 @@ export type SecurityStartupSummary = {
   mcpBearerConfigured: boolean;
   mcpUrlSecretConfigured: boolean;
   mcpOAuthConfigured: boolean;
+  adminOAuthConfigured: boolean;
+  adminAllowlistConfigured: boolean;
   webhookSecretConfigured: boolean;
   internalCallbackConfigured: boolean;
   supabaseConfigured: boolean;
@@ -31,6 +33,10 @@ export function summarizeSecurityConfig(config: AppConfig): SecurityStartupSumma
     mcpBearerConfigured: Boolean(config.mcpBearerToken),
     mcpUrlSecretConfigured: Boolean(config.mcpUrlSecret),
     mcpOAuthConfigured: Boolean(config.supabaseUrl && config.supabaseServiceRoleKey),
+    adminOAuthConfigured: Boolean(
+      config.supabaseUrl && config.supabaseAnonKey && config.supabaseOauthProvider.trim()
+    ),
+    adminAllowlistConfigured: config.adminAllowedEmails.length > 0,
     webhookSecretConfigured: Boolean(config.githubWebhookSecret),
     internalCallbackConfigured: Boolean(config.workspaceAgentCallbackToken),
     supabaseConfigured: Boolean(config.supabaseUrl && config.supabaseServiceRoleKey),
@@ -57,6 +63,24 @@ export function validateSecurityStartup(config: AppConfig): {
       "MCP_BEARER_TOKEN, MCP_URL_SECRET, or OAuth configuration is required"
     );
     addIssue(issues, summary.supabaseConfigured, "Supabase configuration is required");
+
+    if (config.runtimeMode === "production") {
+      addIssue(
+        issues,
+        Boolean(config.supabaseUrl),
+        "DS_MCP_SUPABASE_URL is required for Admin OAuth"
+      );
+      addIssue(
+        issues,
+        Boolean(config.supabaseAnonKey),
+        "DS_MCP_SUPABASE_ANON_KEY is required for Admin OAuth"
+      );
+      addIssue(
+        issues,
+        Boolean(config.supabaseOauthProvider.trim()),
+        "DS_MCP_SUPABASE_OAUTH_PROVIDER is required for Admin OAuth"
+      );
+    }
   }
 
   return {
