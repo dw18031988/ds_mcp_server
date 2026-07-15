@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 import type { AppConfig } from "../config.js";
 import { getSupabaseClient, isSupabaseConfigured } from "../db/supabaseClient.js";
+import { DEFAULT_PUBLIC_BASE_URL, normalizeBaseUrl as normalizePublicBaseUrl } from "../urlDiagnostics.js";
 
 const OAUTH_CLIENTS_TABLE = "mcp_oauth_clients";
 const OAUTH_AUTH_CODES_TABLE = "mcp_oauth_authorization_codes";
@@ -188,7 +189,22 @@ function hasSupabase(config: AppConfig): boolean {
 }
 
 export function resolveOAuthIssuer(config: AppConfig, requestBaseUrl: string): string {
-  return normalizeBaseUrl(config.publicBaseUrl || requestBaseUrl);
+  const normalizedRequestBaseUrl = normalizeBaseUrl(requestBaseUrl);
+  if (config.publicBaseUrl) return normalizePublicBaseUrl(config.publicBaseUrl);
+
+  const requestLooksLocal =
+    normalizedRequestBaseUrl.startsWith("http://localhost") ||
+    normalizedRequestBaseUrl.startsWith("https://localhost") ||
+    normalizedRequestBaseUrl.startsWith("http://127.0.0.1") ||
+    normalizedRequestBaseUrl.startsWith("https://127.0.0.1") ||
+    normalizedRequestBaseUrl.startsWith("http://[::1]") ||
+    normalizedRequestBaseUrl.startsWith("https://[::1]");
+
+  if (config.runtimeMode === "production" && requestLooksLocal) {
+    return DEFAULT_PUBLIC_BASE_URL;
+  }
+
+  return normalizedRequestBaseUrl;
 }
 
 export function buildAdminOAuthRedirectUri(config: AppConfig, requestBaseUrl: string): string {

@@ -162,6 +162,19 @@ test("falls back to the request base url for the admin oauth redirect uri", () =
   );
 });
 
+test("uses the canonical production base url when the request base looks local", () => {
+  const config = {
+    ...baseConfig(),
+    runtimeMode: "production" as const,
+    publicBaseUrl: undefined
+  };
+
+  assert.equal(
+    buildAdminOAuthRedirectUri(config, "http://localhost:8787"),
+    "https://ds-mcp-server-one.vercel.app/api/admin/oauth/callback"
+  );
+});
+
 test("builds protected resource metadata for resource-scoped paths", () => {
   const config = {
     ...baseConfig(),

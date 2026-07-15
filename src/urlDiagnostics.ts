@@ -1,4 +1,4 @@
-const DEFAULT_PUBLIC_BASE_URL = "https://ds-mcp-server-one.vercel.app";
+export const DEFAULT_PUBLIC_BASE_URL = "https://ds-mcp-server-one.vercel.app";
 
 export type UrlDiagnosticsResponse = {
   ok: true;
