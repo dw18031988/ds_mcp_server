@@ -18,6 +18,7 @@ import {
   buildRateLimitRpcArgs
 } from "../src/security/rateLimit.js";
 import { redactText, redactValue } from "../src/security/redaction.js";
+import { isSecureCookieRequest } from "../src/security/cookies.js";
 import { resolveRateLimitPolicy, resolveRoutePolicy } from "../src/security/routePolicy.js";
 import {
   validateSecurityRuntimeDependencies,
@@ -115,6 +116,19 @@ test("returns 403 when internal callback token is missing", async () => {
   if (!decision.ok) {
     assert.equal(decision.status, 403);
   }
+});
+
+test("does not mark localhost cookie requests as secure without forwarded proto", () => {
+  const req = mockRequest("", { host: "localhost:8787" });
+  assert.equal(isSecureCookieRequest(req), false);
+});
+
+test("marks forwarded https cookie requests as secure", () => {
+  const req = mockRequest("", {
+    host: "ds-mcp-server-one.vercel.app",
+    "x-forwarded-proto": "https"
+  });
+  assert.equal(isSecureCookieRequest(req), true);
 });
 
 test("builds oauth metadata from the configured public base url", () => {

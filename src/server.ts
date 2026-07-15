@@ -46,6 +46,7 @@ import { handleAgentOpsRestApi } from "./agentops/router.js";
 import { handleGitHubUploadRestApi } from "./githubUploadRouter.js";
 import { getUrlDiagnostics } from "./urlDiagnostics.js";
 import { acquireRateLimit } from "./security/rateLimit.js";
+import { isSecureCookieRequest } from "./security/cookies.js";
 import { authorizeRoute } from "./security/auth.js";
 import { buildSecurityPosture } from "./security/posture.js";
 import { recordSecuritySignal } from "./security/monitoring.js";
@@ -916,11 +917,6 @@ function adminSessionTokenFromRequest(req: IncomingMessage): string | undefined 
   if (bearer?.startsWith("Bearer ")) return bearer.slice("Bearer ".length).trim();
   const cookies = parseCookies(firstHeader(req.headers.cookie));
   return cookies.dw_agentops_admin_session;
-}
-
-function isSecureCookieRequest(req: IncomingMessage): boolean {
-  const proto = firstHeader(req.headers["x-forwarded-proto"]) || "https";
-  return proto === "https";
 }
 
 async function handleAdminStatic(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
