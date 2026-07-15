@@ -40,7 +40,17 @@ export function buildSecurityPosture(
       control("REST bearer", summary.restBearerConfigured, "REST_API_BEARER_TOKEN"),
       control("MCP bearer", summary.mcpBearerConfigured, "MCP_BEARER_TOKEN"),
       control("MCP URL secret", summary.mcpUrlSecretConfigured, "MCP_URL_SECRET"),
-      control("MCP OAuth", summary.mcpOAuthConfigured, "Supabase-backed OAuth"),
+      control("MCP OAuth", summary.mcpOAuthConfigured, "Supabase-backed MCP OAuth"),
+      control(
+        "Admin OAuth",
+        summary.adminOAuthConfigured,
+        "Supabase URL + anon key + OAuth provider"
+      ),
+      control(
+        "Admin email allowlist",
+        summary.adminAllowlistConfigured,
+        "DS_MCP_SUPABASE_ADMIN_ALLOWED_EMAILS"
+      ),
       control("GitHub webhook", summary.webhookSecretConfigured, "GITHUB_WEBHOOK_SECRET"),
       control("Internal callback", summary.internalCallbackConfigured, "WORKSPACE_AGENT_CALLBACK_TOKEN"),
       control("Supabase", summary.supabaseConfigured, "Supabase URL + service role"),
