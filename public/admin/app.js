@@ -22,6 +22,7 @@ const elements = {
   loginEmail: document.querySelector("#loginEmail"),
   loginPassword: document.querySelector("#loginPassword"),
   loginButton: document.querySelector("#loginButton"),
+  loginLogoutButton: document.querySelector("#loginLogoutButton"),
   logoutButton: document.querySelector("#logoutButton"),
   loginStatus: document.querySelector("#loginStatus"),
   buildVersion: document.querySelector("#buildVersion"),
@@ -71,12 +72,12 @@ const elements = {
 const RUNTIME_MODES = ["local", "development", "staging", "production"];
 const MOBILE_VIEWS = ["progress", "tasks", "assign", "flow"];
 
-function hasToken() {
-  return Boolean(state.token);
+function isAuthenticated() {
+  return state.authState === "authenticated" && Boolean(state.user?.id || state.token);
 }
 
 function syncAuthUi() {
-  const authenticated = hasToken();
+  const authenticated = isAuthenticated();
   elements.loginScreen.hidden = authenticated;
   elements.appShell.hidden = !authenticated;
   elements.loginStatus.textContent = authenticated
@@ -133,6 +134,7 @@ function headers() {
 async function request(path, options = {}) {
   const response = await fetch(path, {
     ...options,
+    credentials: "same-origin",
     headers: {
       ...headers(),
       ...(options.headers || {})
@@ -1117,7 +1119,7 @@ async function loadTasks() {
 }
 
 async function refreshAll() {
-  if (!hasToken()) {
+  if (!isAuthenticated()) {
     syncAuthUi();
     return;
   }
@@ -1309,25 +1311,29 @@ elements.loginForm.addEventListener("submit", async (event) => {
     state.authState = "authenticated";
     elements.loginPassword.value = "";
     syncAuthUi();
-    window.location.assign("/admin");
+    window.history.replaceState(null, "", "/admin#dashboard");
+    await refreshAll();
   } catch (error) {
     elements.loginStatus.textContent = error.message;
     showToast(error.message, true);
   }
 });
 
-elements.logoutButton.addEventListener("click", async () => {
+async function logout() {
   state.user = null;
   state.token = "";
   state.authState = "logged_out";
   try {
-    await fetch("/api/admin/logout", { method: "POST" });
+    await fetch("/api/admin/logout", { method: "POST", credentials: "same-origin" });
   } finally {
     elements.loginEmail.value = "";
     elements.loginPassword.value = "";
     window.location.assign("/admin");
   }
-});
+}
+
+elements.logoutButton.addEventListener("click", logout);
+elements.loginLogoutButton.addEventListener("click", logout);
 
 async function restoreSession() {
   try {
@@ -1338,6 +1344,7 @@ async function restoreSession() {
     state.user = response.user || null;
     state.authState = "authenticated";
     syncAuthUi();
+    window.history.replaceState(null, "", "/admin#dashboard");
     await refreshAll();
   } catch {
     state.user = null;
