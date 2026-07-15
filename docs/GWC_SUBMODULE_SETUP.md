@@ -48,14 +48,18 @@ git commit -m "Update GWC governance submodule"
 Before editing DS MCP source, agents must read:
 
 ```text
-1. .gwc/gwc/docs/AGENT_ENTRYPOINT.md
-2. .gwc/gwc/projects/ds-mcp/project-profile.yaml
-3. .gwc/gwc/projects/ds-mcp/project-instructions.md
-4. .gwc/gwc/projects/ds-mcp/project-extension.md
-5. .gwc/gwc/projects/ds-mcp/admin-task-claim-rule.md
-6. AGENTS.md
-7. package.json
-8. task/source files relevant to the work
+1. .gwc/gwc/AGENTS.md
+2. .gwc/gwc/core/Coding_Project_Governance_v1.0.md
+3. .gwc/gwc/core/GATE_LIFECYCLE_CONTRACT_v1.0.md
+4. .gwc/gwc/core/E2E_DRAFT_PR_DELIVERY_RULE.md
+5. .gwc/gwc/projects/ds-mcp/project-profile.yaml
+6. .gwc/gwc/projects/ds-mcp/project-instructions.md
+7. .gwc/gwc/projects/ds-mcp/project-extension.md
+8. .gwc/gwc/projects/ds-mcp/admin-task-claim-rule.md
+9. .gwc/gwc/projects/ds-mcp/package.yaml
+10. AGENTS.md
+11. package.json
+12. task/source files relevant to the work
 ```
 
 ## Rules

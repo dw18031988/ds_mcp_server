@@ -67,9 +67,11 @@ jobs:
             exit 0
           fi
 
-          test -f .gwc/gwc/docs/AGENT_ENTRYPOINT.md
-          test -f .gwc/gwc/docs/MAIN_WORKFLOW.md
-          test -f .gwc/gwc/docs/EDGE_CASE_MATRIX.md
+          test -f .gwc/gwc/AGENTS.md
+          test -f .gwc/gwc/core/Coding_Project_Governance_v1.0.md
+          test -f .gwc/gwc/core/GATE_LIFECYCLE_CONTRACT_v1.0.md
+          test -f .gwc/gwc/core/E2E_DRAFT_PR_DELIVERY_RULE.md
+          test -f .gwc/gwc/projects/ds-mcp/package.yaml
           test -f .gwc/gwc/projects/ds-mcp/project-profile.yaml
           test -f .gwc/gwc/projects/ds-mcp/project-instructions.md
 
