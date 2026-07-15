@@ -1309,8 +1309,7 @@ elements.loginForm.addEventListener("submit", async (event) => {
     state.authState = "authenticated";
     elements.loginPassword.value = "";
     syncAuthUi();
-    showToast("Signed in");
-    await refreshAll();
+    window.location.assign("/admin");
   } catch (error) {
     elements.loginStatus.textContent = error.message;
     showToast(error.message, true);
