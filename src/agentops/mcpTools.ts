@@ -40,6 +40,7 @@ import {
   transitionTaskSchema,
   updateTaskSchema
 } from "./schemas.js";
+import { getTaskStateContract } from "./taskStateContract.js";
 
 function textOutput(output: unknown) {
   const structuredContent = output && typeof output === "object" && !Array.isArray(output)
@@ -92,6 +93,17 @@ const retryPolicySchema = z.object({
 });
 
 export function registerAgentOpsMcpTools(server: McpServer, config: AppConfig): void {
+  server.registerTool(
+    "task_state_contract_get",
+    {
+      title: "Get task state contract",
+      description: "Get the authoritative DS MCP task states and legal transition matrix.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true }
+    },
+    async () => textOutput({ ok: true, contract: getTaskStateContract() })
+  );
+
   server.registerTool(
     "task_list",
     {
