@@ -141,7 +141,7 @@ export const MCP_TOOL_NAMES = CAPABILITY_DEFINITIONS
   .map((definition) => definition.name);
 
 function stableStringify(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "undefined";
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
   const entries = Object.entries(value as Record<string, unknown>)
     .sort(([left], [right]) => left.localeCompare(right))
