@@ -81,6 +81,10 @@ export type GitHubMergePullRequestInput = GitHubRepoRef & {
   merge_method?: "merge" | "squash" | "rebase";
 };
 
+export type GitHubMarkPullRequestReadyInput = GitHubRepoRef & {
+  pr_number: number;
+};
+
 export type GitHubClosePullRequestInput = GitHubRepoRef & {
   pr_number: number;
 };
@@ -184,11 +188,13 @@ type GitHubUpsertResponse = {
 
 type GitHubPullResponse = {
   number: number;
+  node_id?: string;
   html_url: string;
   state: string;
   title: string;
   head: { ref: string; sha: string };
   base: { ref: string };
+  draft?: boolean;
   merged?: boolean;
   mergeable?: boolean | null;
 };
@@ -351,6 +357,37 @@ async function githubFetch<T>(
   }
 
   return (await response.json()) as T;
+}
+
+async function githubGraphqlFetch<T>(
+  config: AppConfig,
+  query: string,
+  variables: Record<string, unknown>
+): Promise<T> {
+  const token = requireGitHubToken(config);
+  const response = await fetch("https://api.github.com/graphql", {
+    method: "POST",
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ query, variables })
+  });
+
+  if (!response.ok) {
+    throw new Error(`GitHub GraphQL API failed: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as { data?: T; errors?: Array<{ message?: string }> };
+  if (payload.errors?.length) {
+    throw new Error(`GitHub GraphQL API failed: ${payload.errors.map((error) => error.message).join("; ")}`);
+  }
+  if (!payload.data) {
+    throw new Error("GitHub GraphQL API returned no data");
+  }
+
+  return payload.data;
 }
 
 async function githubFetchNoContent(
@@ -930,6 +967,51 @@ export async function githubMergePullRequest(config: AppConfig, input: GitHubMer
     repo: input.repo,
     pr_number: input.pr_number,
     ...merge
+  };
+}
+
+export async function githubMarkPullRequestReadyForReview(
+  config: AppConfig,
+  input: GitHubMarkPullRequestReadyInput
+) {
+  assertAllowedRepo(config, input.owner, input.repo);
+
+  const pr = await githubFetch<GitHubPullResponse>(
+    config,
+    `/repos/${input.owner}/${input.repo}/pulls/${input.pr_number}`
+  );
+
+  if (!pr.node_id) {
+    throw new Error(`Pull request node_id is missing: ${input.owner}/${input.repo}#${input.pr_number}`);
+  }
+
+  type MarkReadyResult = {
+    markPullRequestReadyForReview: {
+      pullRequest: {
+        number: number;
+        isDraft: boolean;
+        url: string;
+      };
+    };
+  };
+
+  const data = await githubGraphqlFetch<MarkReadyResult>(
+    config,
+    `mutation MarkPullRequestReadyForReview($pullRequestId: ID!) {
+      markPullRequestReadyForReview(input: { pullRequestId: $pullRequestId }) {
+        pullRequest { number isDraft url }
+      }
+    }`,
+    { pullRequestId: pr.node_id }
+  );
+
+  return {
+    ok: true,
+    owner: input.owner,
+    repo: input.repo,
+    pr_number: data.markPullRequestReadyForReview.pullRequest.number,
+    html_url: data.markPullRequestReadyForReview.pullRequest.url,
+    ready_for_review: !data.markPullRequestReadyForReview.pullRequest.isDraft
   };
 }
 

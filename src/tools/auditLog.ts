@@ -12,6 +12,7 @@ export type AuditAction =
   | "github_commit_files"
   | "github_delete_file"
   | "github_create_pr"
+  | "github_mark_pr_ready_for_review"
   | "github_merge_pr"
   | "github_close_pr"
   | "github_dispatch_workflow"
