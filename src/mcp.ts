@@ -13,6 +13,7 @@ import {
   githubGetWorkflowRuns,
   githubListTree,
   githubListWorkflowRunArtifacts,
+  githubMergePullRequest,
   githubReadBinaryFile,
   githubReadFile,
   githubUpsertFile,
@@ -341,6 +342,36 @@ export function createMcpServer(config: AppConfig): McpServer {
         branch: input.head,
         pr_number: output.number,
         status: "success"
+      });
+      return textOutput(output);
+    }
+  );
+
+  server.registerTool(
+    "github_merge_pr",
+    {
+      title: "Merge GitHub pull request",
+      description:
+        "Merge a pull request in an allowlisted repository after external G4 approval validation. The caller must verify exact PR head SHA and CI evidence before invoking this write action.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        pr_number: z.number().int().positive(),
+        commit_title: z.string().optional(),
+        commit_message: z.string().optional(),
+        merge_method: z.enum(["merge", "squash", "rebase"]).optional()
+      },
+      annotations: { readOnlyHint: false }
+    },
+    async (input) => {
+      const output = await githubMergePullRequest(config, input);
+      writeAuditEvent({
+        action: "github_merge_pr",
+        source: "mcp",
+        owner: input.owner,
+        repo: input.repo,
+        pr_number: input.pr_number,
+        status: output.merged ? "success" : "failed"
       });
       return textOutput(output);
     }
