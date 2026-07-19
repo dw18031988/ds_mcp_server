@@ -25,12 +25,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                required:
-                  - ok
+                $ref: "#/components/schemas/DsReadiness"
 
   /api/diagnostics/url-map:
     get:
@@ -52,28 +47,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  ok:
-                    type: boolean
-                  service:
-                    type: string
-                    example: ds-mcp-server
-                  environment:
-                    type: string
-                  baseUrl:
-                    type: string
-                    example: https://ds-mcp-server-one.vercel.app
-                  routes:
-                    type: object
-                    additionalProperties:
-                      type: string
-                required:
-                  - ok
-                  - service
-                  - environment
-                  - baseUrl
-                  - routes
+                $ref: "#/components/schemas/DsCapabilitiesResponse"
 
   /api/design-requests/{request_id}:
     get:
@@ -493,6 +467,109 @@ components:
       example: upload_00000000-0000-4000-8000-000000000000
 
   schemas:
+    DsReadiness:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          const: true
+        enabled:
+          type: boolean
+        authenticated:
+          type: boolean
+        write_enabled:
+          type: boolean
+        service:
+          type: string
+          example: ds-mcp-server-one
+        runtime_id:
+          type: string
+        schema_version:
+          type: string
+        capabilities_version:
+          type: string
+        startup_validated:
+          type: boolean
+        degraded_mode:
+          type: string
+          enum: [read_only]
+      required: [ok, enabled, authenticated, write_enabled, service, runtime_id, schema_version, capabilities_version, startup_validated]
+
+    DsCapability:
+      type: object
+      properties:
+        name:
+          type: string
+        transport:
+          type: string
+          enum: [mcp, rest, internal]
+        enabled:
+          type: boolean
+        read_only:
+          type: boolean
+        write_capable:
+          type: boolean
+        required_gate:
+          type: string
+          nullable: true
+        requires_auth:
+          type: boolean
+        runtime_available:
+          type: boolean
+        disabled_reason:
+          type: string
+      required: [name, transport, enabled, read_only, write_capable, required_gate, requires_auth, runtime_available]
+
+    DsCapabilitiesResponse:
+      allOf:
+        - $ref: "#/components/schemas/DsReadiness"
+        - type: object
+          properties:
+            version:
+              type: string
+            mcp_path:
+              type: string
+            methods:
+              type: array
+              items:
+                $ref: "#/components/schemas/DsCapability"
+            mcp_tools:
+              type: array
+              items:
+                type: string
+            rest_paths:
+              type: array
+              items:
+                type: string
+          required: [methods, mcp_tools, rest_paths]
+
+    DsStructuredError:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          const: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum: [PLUGIN_DISABLED, TOOL_REGISTRY_DRIFT, WRITE_DISABLED, AUTH_NOT_CONFIGURED, METHOD_NOT_AVAILABLE, DEGRADED_READ_ONLY]
+            service:
+              type: string
+              example: ds-mcp-server-one
+            retryable:
+              type: boolean
+              const: false
+            details:
+              type: string
+            method:
+              type: string
+            request_id:
+              type: string
+          required: [code, service, retryable, details]
+      required: [ok, error]
+
     DesignRequest:
       type: object
       properties:
