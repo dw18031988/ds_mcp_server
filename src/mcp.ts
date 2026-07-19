@@ -13,6 +13,7 @@ import {
   githubGetWorkflowRuns,
   githubListTree,
   githubListWorkflowRunArtifacts,
+  githubMarkPullRequestReadyForReview,
   githubMergePullRequest,
   githubReadBinaryFile,
   githubReadFile,
@@ -341,6 +342,33 @@ export function createMcpServer(config: AppConfig): McpServer {
         repo: input.repo,
         branch: input.head,
         pr_number: output.number,
+        status: "success"
+      });
+      return textOutput(output);
+    }
+  );
+
+  server.registerTool(
+    "github_mark_pr_ready_for_review",
+    {
+      title: "Mark GitHub pull request ready for review",
+      description:
+        "Mark a Draft pull request as ready for review after external G3 pass validation. The caller must verify exact PR head SHA, CI evidence, review closure, and scope before invoking this write action.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        pr_number: z.number().int().positive()
+      },
+      annotations: { readOnlyHint: false }
+    },
+    async (input) => {
+      const output = await githubMarkPullRequestReadyForReview(config, input);
+      writeAuditEvent({
+        action: "github_mark_pr_ready_for_review",
+        source: "mcp",
+        owner: input.owner,
+        repo: input.repo,
+        pr_number: input.pr_number,
         status: "success"
       });
       return textOutput(output);
