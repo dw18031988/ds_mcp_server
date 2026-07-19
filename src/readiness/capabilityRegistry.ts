@@ -114,11 +114,15 @@ export const CAPABILITY_DEFINITIONS: CapabilityDefinition[] = [
   { name: "task_get", transport: "mcp", read_only: true, write_capable: false, required_gate: null, requires_auth: true },
   { name: "task_create", transport: "mcp", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
   { name: "task_update", transport: "mcp", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
+  { name: "task_delete", transport: "rest", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
   { name: "task_transition", transport: "mcp", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
   { name: "task_links_list", transport: "mcp", read_only: true, write_capable: false, required_gate: null, requires_auth: true },
   { name: "task_link_create", transport: "mcp", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
+  { name: "task_link_delete", transport: "rest", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
   { name: "task_events_list", transport: "mcp", read_only: true, write_capable: false, required_gate: null, requires_auth: true },
   { name: "async_workflow_create", transport: "mcp", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
+  { name: "async_workflow_update", transport: "rest", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
+  { name: "async_workflow_delete", transport: "rest", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
   { name: "async_workflow_get", transport: "mcp", read_only: true, write_capable: false, required_gate: null, requires_auth: true },
   { name: "async_task_claim", transport: "mcp", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
   { name: "async_task_submit_result", transport: "mcp", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
@@ -127,12 +131,14 @@ export const CAPABILITY_DEFINITIONS: CapabilityDefinition[] = [
   { name: "agent_health", transport: "mcp", read_only: true, write_capable: false, required_gate: null, requires_auth: true },
   { name: "agent_register", transport: "mcp", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
   { name: "agent_heartbeat", transport: "mcp", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
+  { name: "workspace_agent_trigger", transport: "rest", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
   { name: "scheduler_tick", transport: "mcp", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
   { name: "scheduler_runs_list", transport: "mcp", read_only: true, write_capable: false, required_gate: null, requires_auth: true },
   { name: "cron_schedules_list", transport: "mcp", read_only: true, write_capable: false, required_gate: null, requires_auth: true },
   { name: "cron_schedule_upsert", transport: "mcp", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
   { name: "retry_policies_list", transport: "mcp", read_only: true, write_capable: false, required_gate: null, requires_auth: true },
   { name: "retry_policy_upsert", transport: "mcp", read_only: false, write_capable: true, required_gate: "G2_EXECUTION", requires_auth: true },
+  { name: "dev_environment_switch", transport: "rest", read_only: false, write_capable: true, required_gate: "G5_DEPLOY", requires_auth: true },
   { name: "dashboard_snapshot", transport: "mcp", read_only: true, write_capable: false, required_gate: null, requires_auth: true }
 ];
 
@@ -379,13 +385,33 @@ export function restWriteCapabilityName(method: string, pathname: string): strin
   if (["GET", "HEAD", "OPTIONS"].includes(normalizedMethod)) return null;
 
   if (normalizedMethod === "POST" && pathname === "/api/agent-results") return "ds_submit_agent_result";
+  if (normalizedMethod === "POST" && pathname === "/api/agent-runs") return "workspace_agent_trigger";
+  if (normalizedMethod === "POST" && pathname === "/api/dev/environment") return "dev_environment_switch";
+  if (normalizedMethod === "POST" && pathname === "/api/agents/register") return "agent_register";
+  if (normalizedMethod === "POST" && /^\/api\/agents\/[^/]+\/heartbeat$/.test(pathname)) return "agent_heartbeat";
+  if (normalizedMethod === "POST" && pathname === "/api/scheduler/tick") return "scheduler_tick";
+  if (normalizedMethod === "POST" && pathname === "/api/scheduler/cron-schedules") return "cron_schedule_upsert";
+  if (normalizedMethod === "POST" && pathname === "/api/scheduler/retry-policies") return "retry_policy_upsert";
   if (normalizedMethod === "POST" && pathname === "/api/tasks") return "task_create";
+  if (normalizedMethod === "POST" && pathname === "/api/tasks/bulk") return "task_create";
+  if (["PATCH", "PUT"].includes(normalizedMethod) && pathname === "/api/tasks/bulk") return "task_update";
+  if (normalizedMethod === "DELETE" && pathname === "/api/tasks/bulk") return "task_delete";
   if (["PATCH", "PUT"].includes(normalizedMethod) && /^\/api\/tasks\/[^/]+$/.test(pathname)) return "task_update";
+  if (normalizedMethod === "DELETE" && /^\/api\/tasks\/[^/]+$/.test(pathname)) return "task_delete";
   if (normalizedMethod === "POST" && /^\/api\/tasks\/[^/]+\/transitions$/.test(pathname)) return "task_transition";
   if (normalizedMethod === "POST" && pathname === "/api/tasks/bulk/transitions") return "task_transition";
   if (normalizedMethod === "POST" && pathname === "/api/task-links") return "task_link_create";
+  if (normalizedMethod === "POST" && pathname === "/api/task-links/bulk") return "task_link_create";
+  if (normalizedMethod === "DELETE" && pathname === "/api/task-links/bulk") return "task_link_delete";
   if (normalizedMethod === "POST" && /^\/api\/tasks\/[^/]+\/links$/.test(pathname)) return "task_link_create";
+  if (normalizedMethod === "DELETE" && /^\/api\/tasks\/[^/]+\/links\/[^/]+$/.test(pathname)) return "task_link_delete";
   if (normalizedMethod === "POST" && pathname === "/api/workflows") return "async_workflow_create";
+  if (["PATCH", "PUT"].includes(normalizedMethod) && /^\/api\/workflows\/[^/]+$/.test(pathname)) return "async_workflow_update";
+  if (normalizedMethod === "DELETE" && /^\/api\/workflows\/[^/]+$/.test(pathname)) return "async_workflow_delete";
+  if (normalizedMethod === "POST" && /^\/api\/workflows\/[^/]+\/tasks\/bulk$/.test(pathname)) return "async_workflow_update";
+  if (normalizedMethod === "DELETE" && /^\/api\/workflows\/[^/]+\/tasks\/bulk$/.test(pathname)) return "async_workflow_update";
+  if (normalizedMethod === "POST" && pathname === "/api/async-tasks/claim") return "async_task_claim";
+  if (normalizedMethod === "POST" && /^\/api\/async-tasks\/[^/]+\/result$/.test(pathname)) return "async_task_submit_result";
   if (normalizedMethod === "POST" && /^\/internal\/agent-runs\/[^/]+\/result$/.test(pathname)) return "async_task_submit_result";
   if (normalizedMethod === "POST" && /^\/api\/github\/repos\/[^/]+\/[^/]+\/branches$/.test(pathname)) return "github_create_branch";
   if (normalizedMethod === "POST" && /^\/api\/github\/repos\/[^/]+\/[^/]+\/files$/.test(pathname)) return "github_upsert_file";
