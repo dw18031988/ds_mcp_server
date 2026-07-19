@@ -24,6 +24,11 @@ import { registerGitHubFilePushTools } from "./tools/githubFilePushTools.js";
 import { githubGenerateIntegrityArtifacts } from "./tools/githubIntegrityArtifacts.js";
 import { writeAuditEvent } from "./tools/auditLog.js";
 import { registerAgentOpsMcpTools } from "./agentops/mcpTools.js";
+import {
+  buildDsPingResponse,
+  buildGetCapabilitiesResponse,
+  installMcpReadinessGuard
+} from "./readiness/capabilityRegistry.js";
 
 const serviceVersion = "0.8.0";
 
@@ -70,6 +75,7 @@ export function createMcpServer(config: AppConfig): McpServer {
     name: "design-system-mcp",
     version: serviceVersion
   });
+  installMcpReadinessGuard(server, config);
 
   server.registerTool(
     "ds_ping",
@@ -79,22 +85,45 @@ export function createMcpServer(config: AppConfig): McpServer {
       inputSchema: {},
       outputSchema: {
         ok: z.boolean(),
+        enabled: z.boolean(),
+        authenticated: z.boolean(),
+        write_enabled: z.boolean(),
         service: z.string(),
-        version: z.string()
+        runtime_id: z.string(),
+        schema_version: z.string(),
+        capabilities_version: z.string(),
+        startup_validated: z.boolean()
       },
       annotations: {
         readOnlyHint: true
       }
     },
-    async () => {
-      const output = {
-        ok: true,
-        service: "design-system-mcp",
-        version: serviceVersion
-      };
+    async () => textOutput(buildDsPingResponse(config))
+  );
 
-      return textOutput(output);
-    }
+  server.registerTool(
+    "get_capabilities",
+    {
+      title: "Get DS MCP capabilities",
+      description: "Return authoritative readiness and capability metadata for exposed DS MCP methods.",
+      inputSchema: {},
+      outputSchema: {
+        ok: z.boolean(),
+        enabled: z.boolean(),
+        authenticated: z.boolean(),
+        write_enabled: z.boolean(),
+        service: z.string(),
+        runtime_id: z.string(),
+        schema_version: z.string(),
+        capabilities_version: z.string(),
+        startup_validated: z.boolean(),
+        methods: z.array(z.record(z.unknown()))
+      },
+      annotations: {
+        readOnlyHint: true
+      }
+    },
+    async () => textOutput(buildGetCapabilitiesResponse(config, { serviceVersion, startupValidated: true }))
   );
 
   server.registerTool(

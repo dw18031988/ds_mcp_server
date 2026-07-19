@@ -73,6 +73,15 @@ import {
 } from "./security/startupValidation.js";
 import { redactValue } from "./security/redaction.js";
 import {
+  MCP_TOOL_NAMES,
+  buildDsPingResponse,
+  buildGetCapabilitiesResponse,
+  evaluateCapabilityRegistryDrift,
+  formatCapabilityStartupError,
+  guardRestWriteCapability,
+  restWriteCapabilityName
+} from "./readiness/capabilityRegistry.js";
+import {
   PayloadTooLargeError,
   readJsonBody as readJsonBodyWithLimit,
   readRawBody as readRawBodyWithLimit
@@ -92,6 +101,16 @@ const securityRuntime = await validateSecurityRuntimeDependencies(config);
 if (!securityRuntime.ok) {
   console.error(formatSecurityRuntimeStartupError(securityRuntime.issues));
   process.exit(1);
+}
+
+const capabilityStartup = evaluateCapabilityRegistryDrift(config, MCP_TOOL_NAMES, securityStartup.ok && securityRuntime.ok);
+if (!capabilityStartup.ok) {
+  const message = formatCapabilityStartupError(capabilityStartup);
+  if (config.securityEnforcement === "strict") {
+    console.error(message);
+    process.exit(1);
+  }
+  console.warn(message);
 }
 
 type UpstreamCallBucket = {
@@ -1270,6 +1289,51 @@ function agentRunPublicView(run: ReturnType<typeof getAgentRun>) {
 }
 
 function getCapabilities() {
+  const startupValidated = securityStartup.ok && securityRuntime.ok && capabilityStartup.startup_validated;
+  return buildGetCapabilitiesResponse(config, {
+    serviceVersion,
+    startupValidated,
+    security: {
+      enforcement: config.securityEnforcement,
+      startup_validated: startupValidated,
+      cors_allowed_origins: config.securityEnforcement === "strict" ? config.corsAllowedOrigins : ["*"],
+      mcp_url_secret_configured: Boolean(config.mcpUrlSecret),
+      max_json_body_bytes: config.maxJsonBodyBytes,
+      rate_limit_window_ms: config.rateLimitWindowMs,
+      rate_limit_max_requests: config.rateLimitMaxRequests,
+      degraded_mode: capabilityStartup.degraded_mode
+    },
+    guardrails: {
+      github_allowed_repos: config.githubAllowedRepos,
+      github_default_base_branch: config.githubDefaultBaseBranch,
+      github_allowed_branch_prefixes: config.githubAllowedBranchPrefixes,
+      github_max_file_bytes: config.githubMaxFileBytes,
+      ds_upload_session_ttl_seconds: config.dsUploadSessionTtlSeconds,
+      ds_upload_chunk_max_bytes: config.dsUploadChunkMaxBytes,
+      ds_upload_max_file_bytes: config.dsUploadMaxFileBytes,
+      ds_upload_storage: config.dsUploadStorage,
+      protected_branches: ["main", "master", "production", "prod"]
+    },
+    auth: {
+      mcp_bearer_token_configured: Boolean(config.mcpBearerToken),
+      mcp_url_secret_configured: Boolean(config.mcpUrlSecret),
+      mcp_oauth_configured: Boolean(
+        config.publicBaseUrl && config.supabaseUrl && config.supabaseServiceRoleKey
+      ),
+      rest_api_bearer_token_configured: Boolean(config.restApiBearerToken),
+      github_token_configured: Boolean(config.githubToken),
+      github_webhook_secret_configured: Boolean(config.githubWebhookSecret),
+      workspace_agent_trigger_configured: Boolean(
+        config.workspaceAgentTriggerId && config.workspaceAgentToken
+      ),
+      workspace_agent_callback_token_configured: Boolean(config.workspaceAgentCallbackToken),
+      supabase_configured: Boolean(config.supabaseUrl && config.supabaseServiceRoleKey),
+      security_posture_endpoint: "/api/security/posture"
+    }
+  });
+}
+
+function getLegacyCapabilities() {
   return {
     ok: true,
     service: "design-system-mcp",
@@ -2349,7 +2413,12 @@ const httpServer = createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/health") {
-    return sendJson(res, 200, { ok: true }, { "X-Request-Id": securityContext.requestId });
+    return sendJson(
+      res,
+      200,
+      buildDsPingResponse(config, securityStartup.ok && securityRuntime.ok && capabilityStartup.startup_validated),
+      { "X-Request-Id": securityContext.requestId }
+    );
   }
 
   if (req.method === "GET" && url.pathname === "/dashboard/upstream-calls") {
@@ -2361,6 +2430,16 @@ const httpServer = createServer(async (req, res) => {
 
   const handledAdminStatic = await handleAdminStatic(req, res, url);
   if (handledAdminStatic) return;
+
+  const blockedWrite = guardRestWriteCapability(
+    config,
+    restWriteCapabilityName(req.method || "GET", url.pathname),
+    securityContext.requestId,
+    securityStartup.ok && securityRuntime.ok && capabilityStartup.startup_validated
+  );
+  if (blockedWrite) {
+    return sendJson(res, blockedWrite.status, blockedWrite.body, { "X-Request-Id": securityContext.requestId });
+  }
 
   const handledWorkspaceAgentCallback = await handleWorkspaceAgentCallback(req, res, url);
   if (handledWorkspaceAgentCallback) return;
