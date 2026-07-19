@@ -107,6 +107,9 @@ export type AppConfig = {
   devToolsEnabled: boolean;
   devToolsAllowRealDbSwitch: boolean;
   databaseProfiles: Record<string, DatabaseProfile>;
+  runtimeEnabled: boolean;
+  writeEnabled: boolean;
+  runtimeId: string;
 };
 
 function readPort(value: string | undefined): number {
@@ -137,7 +140,20 @@ function readCsv(value: string | undefined, fallback: string[] = []): string[] {
 
 function readBoolean(value: string | undefined, fallback = false): boolean {
   if (!value) return fallback;
-  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return fallback;
+}
+
+function readRuntimeId(): string {
+  return (
+    appEnv("RUNTIME_ID") ||
+    process.env.VERCEL_GIT_COMMIT_SHA ||
+    process.env.VERCEL_DEPLOYMENT_ID ||
+    process.env.HOSTNAME ||
+    "local"
+  );
 }
 
 function readSecurityEnforcement(value: string | undefined): SecurityEnforcement {
@@ -281,6 +297,9 @@ export function loadConfig(): AppConfig {
     activeDbTarget,
     devToolsEnabled: readBoolean(appEnv("DEV_TOOLS_ENABLED")),
     devToolsAllowRealDbSwitch: readBoolean(appEnv("DEV_TOOLS_ALLOW_REAL_DB_SWITCH")),
-    databaseProfiles
+    databaseProfiles,
+    runtimeEnabled: readBoolean(appEnv("RUNTIME_ENABLED"), true),
+    writeEnabled: readBoolean(appEnv("WRITE_ENABLED"), true),
+    runtimeId: readRuntimeId()
   };
 }
