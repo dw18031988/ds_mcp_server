@@ -19,6 +19,9 @@ export type SecurityStartupSummary = {
   maxJsonBodyBytes: number;
   rateLimitWindowMs: number;
   rateLimitMaxRequests: number;
+  runtimeEnabled: boolean;
+  writeEnabled: boolean;
+  runtimeId: string;
 };
 
 function addIssue(issues: string[], condition: boolean, message: string): void {
@@ -43,7 +46,10 @@ export function summarizeSecurityConfig(config: AppConfig): SecurityStartupSumma
     corsAllowedOrigins: config.corsAllowedOrigins.length,
     maxJsonBodyBytes: config.maxJsonBodyBytes,
     rateLimitWindowMs: config.rateLimitWindowMs,
-    rateLimitMaxRequests: config.rateLimitMaxRequests
+    rateLimitMaxRequests: config.rateLimitMaxRequests,
+    runtimeEnabled: config.runtimeEnabled,
+    writeEnabled: config.writeEnabled,
+    runtimeId: config.runtimeId
   };
 }
 
