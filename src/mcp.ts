@@ -382,11 +382,12 @@ export function createMcpServer(config: AppConfig): McpServer {
     {
       title: "Mark GitHub pull request ready for review",
       description:
-        "Mark a Draft pull request as ready for review after external G3 pass validation. The caller must verify exact PR head SHA, CI evidence, review closure, and scope before invoking this write action.",
+        "Mark a Draft pull request as ready for review after external G3 pass validation. This action verifies the live pull request is open, unmerged, still a draft, and matches expected_head_sha. The caller must verify CI evidence, review closure, and scope before invoking this write action.",
       inputSchema: {
         owner: z.string().min(1),
         repo: z.string().min(1),
-        pr_number: z.number().int().positive()
+        pr_number: z.number().int().positive(),
+        expected_head_sha: z.string().regex(/^[0-9a-f]{40}$/i)
       },
       annotations: { readOnlyHint: false }
     },
