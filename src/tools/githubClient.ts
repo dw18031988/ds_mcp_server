@@ -83,6 +83,7 @@ export type GitHubMergePullRequestInput = GitHubRepoRef & {
 
 export type GitHubMarkPullRequestReadyInput = GitHubRepoRef & {
   pr_number: number;
+  expected_head_sha: string;
 };
 
 export type GitHubClosePullRequestInput = GitHubRepoRef & {
@@ -975,14 +976,35 @@ export async function githubMarkPullRequestReadyForReview(
   input: GitHubMarkPullRequestReadyInput
 ) {
   assertAllowedRepo(config, input.owner, input.repo);
+  assertCommitSha(input.expected_head_sha, "expected_head_sha");
 
   const pr = await githubFetch<GitHubPullResponse>(
     config,
     `/repos/${input.owner}/${input.repo}/pulls/${input.pr_number}`
   );
 
+  const pullRequestRef = `${input.owner}/${input.repo}#${input.pr_number}`;
+
+  if (pr.state !== "open") {
+    throw new Error(`Pull request must be open: ${pullRequestRef} is ${pr.state}`);
+  }
+
+  if (pr.merged) {
+    throw new Error(`Pull request is already merged: ${pullRequestRef}`);
+  }
+
+  if (pr.draft !== true) {
+    throw new Error(`Pull request is not a draft: ${pullRequestRef}`);
+  }
+
+  if (pr.head.sha !== input.expected_head_sha) {
+    throw new Error(
+      `Pull request head moved: expected ${input.expected_head_sha}, actual ${pr.head.sha}`
+    );
+  }
+
   if (!pr.node_id) {
-    throw new Error(`Pull request node_id is missing: ${input.owner}/${input.repo}#${input.pr_number}`);
+    throw new Error(`Pull request node_id is missing: ${pullRequestRef}`);
   }
 
   type MarkReadyResult = {
@@ -1010,6 +1032,7 @@ export async function githubMarkPullRequestReadyForReview(
     owner: input.owner,
     repo: input.repo,
     pr_number: data.markPullRequestReadyForReview.pullRequest.number,
+    head_sha: pr.head.sha,
     html_url: data.markPullRequestReadyForReview.pullRequest.url,
     ready_for_review: !data.markPullRequestReadyForReview.pullRequest.isDraft
   };
