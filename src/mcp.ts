@@ -10,13 +10,18 @@ import {
   githubDownloadArchiveZip,
   githubDownloadWorkflowArtifactZip,
   githubGetRepo,
+  githubGetWorkflowRun,
   githubGetWorkflowRuns,
+  githubListCheckRunsForRef,
   githubListTree,
   githubListWorkflowRunArtifacts,
+  githubListWorkflowRunJobs,
+  githubListWorkflowRuns,
   githubMarkPullRequestReadyForReview,
   githubMergePullRequest,
   githubReadBinaryFile,
   githubReadFile,
+  githubStructuredError,
   githubUpsertFile,
   type GitHubBinaryResult
 } from "./tools/githubClient.js";
@@ -68,6 +73,23 @@ function textOutput(output: unknown): ToolTextResult {
     structuredContent: toStructuredContent(output),
     content: [{ type: "text", text: JSON.stringify(output) }]
   };
+}
+
+function githubErrorOutput(error: unknown) {
+  const structured = githubStructuredError(error);
+  return {
+    structuredContent: structured,
+    content: [{ type: "text" as const, text: JSON.stringify(structured) }],
+    isError: true
+  };
+}
+
+async function githubTextOutput(operation: () => Promise<unknown>) {
+  try {
+    return textOutput(await operation());
+  } catch (error) {
+    return githubErrorOutput(error);
+  }
 }
 
 export function createMcpServer(config: AppConfig): McpServer {
