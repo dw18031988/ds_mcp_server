@@ -507,16 +507,7 @@ async function githubFetch<T>(
   });
 
   if (!response.ok) {
-    let message = `GitHub API failed: ${response.status}`;
-
-    try {
-      const body = (await response.json()) as GitHubErrorBody;
-      if (body.message) message = `${message} ${body.message}`;
-    } catch {
-      // Keep generic message.
-    }
-
-    throw new Error(message);
+    throw await githubApiError(response);
   }
 
   return (await response.json()) as T;
@@ -570,16 +561,7 @@ async function githubFetchNoContent(
   });
 
   if (!response.ok) {
-    let message = `GitHub API failed: ${response.status}`;
-
-    try {
-      const body = (await response.json()) as GitHubErrorBody;
-      if (body.message) message = `${message} ${body.message}`;
-    } catch {
-      // Keep generic message.
-    }
-
-    throw new Error(message);
+    throw await githubApiError(response);
   }
 }
 
@@ -599,17 +581,7 @@ async function githubFetchBinary(
   });
 
   if (!response.ok) {
-    let message = `GitHub binary download failed: ${response.status}`;
-
-    try {
-      const body = (await response.json()) as GitHubErrorBody;
-      if (body.message) message = `${message} ${body.message}`;
-    } catch {
-      const text = await response.text().catch(() => "");
-      if (text) message = `${message} ${text.slice(0, 200)}`;
-    }
-
-    throw new Error(message);
+    throw await githubApiError(response, "GitHub binary download failed");
   }
 
   return {
