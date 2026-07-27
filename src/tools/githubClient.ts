@@ -161,8 +161,9 @@ export class GitHubApiError extends Error {
   }
 }
 
-function githubErrorCode(status: number): GitHubApiErrorCode {
+function githubErrorCode(status: number, rateLimited = false): GitHubApiErrorCode {
   if (status === 401) return "GITHUB_UNAUTHORIZED";
+  if (status === 403 && rateLimited) return "GITHUB_RATE_LIMITED";
   if (status === 403) return "GITHUB_FORBIDDEN";
   if (status === 404) return "GITHUB_NOT_FOUND";
   if (status === 422) return "GITHUB_VALIDATION_FAILED";
@@ -205,12 +206,16 @@ async function githubApiError(response: Response, prefix = "GitHub API failed"):
   }
 
   const requestId = response.headers.get("x-github-request-id") || undefined;
+  const rateLimited =
+    response.status === 429 ||
+    response.headers.get("x-ratelimit-remaining") === "0" ||
+    /rate limit/i.test(body.message ?? "");
   const message = body.message ? `${prefix}: ${response.status} ${body.message}` : `${prefix}: ${response.status}`;
   return new GitHubApiError({
-    code: githubErrorCode(response.status),
+    code: githubErrorCode(response.status, rateLimited),
     status: response.status,
     message,
-    retryable: response.status === 429 || response.status >= 500,
+    retryable: rateLimited || response.status >= 500,
     documentationUrl: body.documentation_url,
     requestId
   });
