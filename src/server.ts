@@ -24,12 +24,17 @@ import {
   githubCreatePullRequest,
   githubDownloadArchiveZip,
   githubDownloadWorkflowArtifactZip,
+  GitHubApiError,
   githubGetRepo,
+  githubGetWorkflowRun,
   githubGetWorkflowRuns,
+  githubListCheckRunsForRef,
   githubListTree,
   githubListWorkflowRunArtifacts,
+  githubListWorkflowRunJobs,
   githubReadBinaryFile,
   githubReadFile,
+  githubStructuredError,
   githubUpsertFile
 } from "./tools/githubClient.js";
 import { githubGenerateIntegrityArtifacts } from "./tools/githubIntegrityArtifacts.js";
@@ -1135,7 +1140,10 @@ function normalizePathForDashboard(pathname: string): string {
     .replace(/^\/api\/agent-runs\/[^/]+$/, "/api/agent-runs/{run_id}")
     .replace(/^\/internal\/agent-runs\/[^/]+\/result$/, "/internal/agent-runs/{run_id}/result")
     .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)\/pull-requests\/\d+\/comments$/, "/api/github/repos/{owner}/{repo}/pull-requests/{pr_number}/comments")
+    .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/runs\/\d+\/jobs$/, "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}/jobs")
     .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/runs\/\d+\/artifacts$/, "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts")
+    .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/runs\/\d+$/, "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}")
+    .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)\/commits\/[^/]+\/check-runs$/, "/api/github/repos/{owner}/{repo}/commits/{ref}/check-runs")
     .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/artifacts\/\d+\/zip$/, "/api/github/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip")
     .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)(\/.*)?$/, (_match, _owner, _repo, suffix) => {
       return `/api/github/repos/{owner}/{repo}${suffix ?? ""}`;
@@ -1372,6 +1380,11 @@ function getLegacyCapabilities() {
       "github_upsert_file",
       "github_create_pr",
       "github_get_workflow_runs",
+      "github_list_workflow_runs",
+      "github_get_workflow_run",
+      "github_list_workflow_run_jobs",
+      "github_list_workflow_run_artifacts",
+      "github_list_check_runs_for_ref",
       "github_comment_pr"
     ],
     rest_paths: [
@@ -1408,7 +1421,10 @@ function getLegacyCapabilities() {
       "/api/github/repos/{owner}/{repo}/pull-requests",
       "/api/github/repos/{owner}/{repo}/pull-requests/{pr_number}/comments",
       "/api/github/repos/{owner}/{repo}/workflow-runs",
+      "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}",
+      "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}/jobs",
       "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts",
+      "/api/github/repos/{owner}/{repo}/commits/{ref}/check-runs",
       "/api/github/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip",
       "/api/github/repos/{owner}/{repo}/archive",
       "/api/github/repos/{owner}/{repo}/upload-sessions",
