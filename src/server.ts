@@ -2084,13 +2084,23 @@ async function handleGitHubRestApi(
     const workflowMatch = repoRoute(url, "workflow-runs");
 
     if (req.method === "GET" && workflowMatch) {
+      const checkSuiteIdParam = url.searchParams.get("check_suite_id");
+      const workflowIdParam = url.searchParams.get("workflow_id");
       sendJson(
         res,
         200,
         await githubGetWorkflowRuns(config, {
           ...repoInput(workflowMatch),
+          workflow_id: workflowIdParam || undefined,
           branch: url.searchParams.get("branch") || undefined,
-          per_page: asNumber(Number(url.searchParams.get("per_page") || 10), 10)
+          event: url.searchParams.get("event") || undefined,
+          status: url.searchParams.get("status") || undefined,
+          head_sha: url.searchParams.get("head_sha") || undefined,
+          check_suite_id: checkSuiteIdParam
+            ? parsePositiveInt(checkSuiteIdParam, "check_suite_id")
+            : undefined,
+          page: asNumber(Number(url.searchParams.get("page") || 1), 1),
+          per_page: asNumber(Number(url.searchParams.get("per_page") || 30), 30)
         })
       );
       return true;
@@ -2138,6 +2148,11 @@ async function handleGitHubRestApi(
         error: "Invalid GitHub payload",
         details: error.flatten()
       });
+      return true;
+    }
+
+    if (error instanceof GitHubApiError) {
+      sendJson(res, error.status, githubStructuredError(error));
       return true;
     }
 
