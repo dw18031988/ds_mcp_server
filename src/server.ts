@@ -1909,6 +1909,45 @@ async function handleGitHubRestApi(
       return true;
     }
 
+    const workflowRunMatch = url.pathname.match(
+      /^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/runs\/(\d+)$/
+    );
+
+    if (req.method === "GET" && workflowRunMatch) {
+      sendJson(
+        res,
+        200,
+        await githubGetWorkflowRun(config, {
+          owner: decodeURIComponent(workflowRunMatch[1] ?? ""),
+          repo: decodeURIComponent(workflowRunMatch[2] ?? ""),
+          run_id: parsePositiveInt(workflowRunMatch[3], "run_id"),
+          expected_head_sha: url.searchParams.get("expected_head_sha") || undefined
+        })
+      );
+      return true;
+    }
+
+    const runJobsMatch = url.pathname.match(
+      /^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/runs\/(\d+)\/jobs$/
+    );
+
+    if (req.method === "GET" && runJobsMatch) {
+      const filterParam = url.searchParams.get("filter");
+      sendJson(
+        res,
+        200,
+        await githubListWorkflowRunJobs(config, {
+          owner: decodeURIComponent(runJobsMatch[1] ?? ""),
+          repo: decodeURIComponent(runJobsMatch[2] ?? ""),
+          run_id: parsePositiveInt(runJobsMatch[3], "run_id"),
+          filter: filterParam === "all" ? "all" : "latest",
+          page: asNumber(Number(url.searchParams.get("page") || 1), 1),
+          per_page: asNumber(Number(url.searchParams.get("per_page") || 30), 30)
+        })
+      );
+      return true;
+    }
+
     const runArtifactsMatch = url.pathname.match(
       /^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/runs\/(\d+)\/artifacts$/
     );
@@ -1921,6 +1960,36 @@ async function handleGitHubRestApi(
           owner: decodeURIComponent(runArtifactsMatch[1] ?? ""),
           repo: decodeURIComponent(runArtifactsMatch[2] ?? ""),
           run_id: parsePositiveInt(runArtifactsMatch[3], "run_id"),
+          page: asNumber(Number(url.searchParams.get("page") || 1), 1),
+          per_page: asNumber(Number(url.searchParams.get("per_page") || 30), 30)
+        })
+      );
+      return true;
+    }
+
+    const checkRunsMatch = url.pathname.match(
+      /^\/api\/github\/repos\/([^/]+)\/([^/]+)\/commits\/([^/]+)\/check-runs$/
+    );
+
+    if (req.method === "GET" && checkRunsMatch) {
+      const statusParam = url.searchParams.get("status");
+      const filterParam = url.searchParams.get("filter");
+      const appIdParam = url.searchParams.get("app_id");
+      sendJson(
+        res,
+        200,
+        await githubListCheckRunsForRef(config, {
+          owner: decodeURIComponent(checkRunsMatch[1] ?? ""),
+          repo: decodeURIComponent(checkRunsMatch[2] ?? ""),
+          ref: decodeURIComponent(checkRunsMatch[3] ?? ""),
+          check_name: url.searchParams.get("check_name") || undefined,
+          status:
+            statusParam === "queued" || statusParam === "in_progress" || statusParam === "completed"
+              ? statusParam
+              : undefined,
+          filter: filterParam === "all" ? "all" : "latest",
+          app_id: appIdParam ? parsePositiveInt(appIdParam, "app_id") : undefined,
+          page: asNumber(Number(url.searchParams.get("page") || 1), 1),
           per_page: asNumber(Number(url.searchParams.get("per_page") || 30), 30)
         })
       );
