@@ -113,7 +113,108 @@ export type GitHubBinaryResult = {
 type GitHubErrorBody = {
   message?: string;
   documentation_url?: string;
+  status?: string;
 };
+
+export type GitHubApiErrorCode =
+  | "GITHUB_UNAUTHORIZED"
+  | "GITHUB_FORBIDDEN"
+  | "GITHUB_NOT_FOUND"
+  | "GITHUB_VALIDATION_FAILED"
+  | "GITHUB_RATE_LIMITED"
+  | "GITHUB_UPSTREAM_ERROR";
+
+export type GitHubStructuredError = {
+  ok: false;
+  error: {
+    code: GitHubApiErrorCode;
+    status: number;
+    message: string;
+    retryable: boolean;
+    documentation_url?: string;
+    request_id?: string;
+  };
+};
+
+export class GitHubApiError extends Error {
+  readonly code: GitHubApiErrorCode;
+  readonly status: number;
+  readonly retryable: boolean;
+  readonly documentationUrl?: string;
+  readonly requestId?: string;
+
+  constructor(input: {
+    code: GitHubApiErrorCode;
+    status: number;
+    message: string;
+    retryable: boolean;
+    documentationUrl?: string;
+    requestId?: string;
+  }) {
+    super(input.message);
+    this.name = "GitHubApiError";
+    this.code = input.code;
+    this.status = input.status;
+    this.retryable = input.retryable;
+    this.documentationUrl = input.documentationUrl;
+    this.requestId = input.requestId;
+  }
+}
+
+function githubErrorCode(status: number): GitHubApiErrorCode {
+  if (status === 401) return "GITHUB_UNAUTHORIZED";
+  if (status === 403) return "GITHUB_FORBIDDEN";
+  if (status === 404) return "GITHUB_NOT_FOUND";
+  if (status === 422) return "GITHUB_VALIDATION_FAILED";
+  if (status === 429) return "GITHUB_RATE_LIMITED";
+  return "GITHUB_UPSTREAM_ERROR";
+}
+
+export function githubStructuredError(error: unknown): GitHubStructuredError {
+  if (error instanceof GitHubApiError) {
+    return {
+      ok: false,
+      error: {
+        code: error.code,
+        status: error.status,
+        message: error.message,
+        retryable: error.retryable,
+        ...(error.documentationUrl ? { documentation_url: error.documentationUrl } : {}),
+        ...(error.requestId ? { request_id: error.requestId } : {})
+      }
+    };
+  }
+
+  return {
+    ok: false,
+    error: {
+      code: "GITHUB_UPSTREAM_ERROR",
+      status: 502,
+      message: error instanceof Error ? error.message : "GitHub API failed",
+      retryable: true
+    }
+  };
+}
+
+async function githubApiError(response: Response, prefix = "GitHub API failed"): Promise<GitHubApiError> {
+  let body: GitHubErrorBody = {};
+  try {
+    body = (await response.json()) as GitHubErrorBody;
+  } catch {
+    // Keep a stable error even when GitHub returns a non-JSON body.
+  }
+
+  const requestId = response.headers.get("x-github-request-id") || undefined;
+  const message = body.message ? `${prefix}: ${response.status} ${body.message}` : `${prefix}: ${response.status}`;
+  return new GitHubApiError({
+    code: githubErrorCode(response.status),
+    status: response.status,
+    message,
+    retryable: response.status === 429 || response.status >= 500,
+    documentationUrl: body.documentation_url,
+    requestId
+  });
+}
 
 type GitHubContentResponse = {
   type: string;
@@ -214,18 +315,79 @@ type GitHubRepoResponse = {
   permissions?: Record<string, boolean>;
 };
 
+export type GitHubWorkflowRun = {
+  id: number;
+  workflow_id?: number;
+  check_suite_id?: number;
+  run_number?: number;
+  run_attempt?: number;
+  name?: string;
+  display_title?: string;
+  event?: string;
+  head_branch?: string;
+  head_sha?: string;
+  status?: string;
+  conclusion?: string | null;
+  html_url?: string;
+  jobs_url?: string;
+  artifacts_url?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 type GitHubWorkflowRunsResponse = {
   total_count: number;
-  workflow_runs: Array<{
+  workflow_runs: GitHubWorkflowRun[];
+};
+
+type GitHubWorkflowJobsResponse = {
+  total_count: number;
+  jobs: Array<{
     id: number;
-    name?: string;
-    head_branch?: string;
+    run_id: number;
     head_sha?: string;
+    html_url?: string | null;
     status?: string;
     conclusion?: string | null;
-    html_url?: string;
     created_at?: string;
-    updated_at?: string;
+    started_at?: string;
+    completed_at?: string | null;
+    name: string;
+    steps?: Array<{
+      name: string;
+      status: string;
+      conclusion: string | null;
+      number: number;
+      started_at?: string | null;
+      completed_at?: string | null;
+    }>;
+    labels?: string[];
+    runner_id?: number | null;
+    runner_name?: string | null;
+  }>;
+};
+
+type GitHubCheckRunsResponse = {
+  total_count: number;
+  check_runs: Array<{
+    id: number;
+    node_id?: string;
+    name: string;
+    head_sha: string;
+    status: string;
+    conclusion: string | null;
+    started_at?: string | null;
+    completed_at?: string | null;
+    html_url?: string | null;
+    details_url?: string | null;
+    external_id?: string | null;
+    app?: { id?: number; slug?: string; name?: string } | null;
+    output?: {
+      title?: string | null;
+      summary?: string | null;
+      text?: string | null;
+      annotations_count?: number;
+    };
   }>;
 };
 
