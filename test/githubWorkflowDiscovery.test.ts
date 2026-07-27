@@ -197,3 +197,40 @@ test("GitHub failures preserve status and request ID without exposing tokens", a
     }
   );
 });
+
+test("GitHub 403 rate limits remain retryable while ordinary 403 stays forbidden", async () => {
+  let rateLimited = true;
+  globalThis.fetch = async () =>
+    rateLimited
+      ? jsonResponse(
+          { message: "API rate limit exceeded" },
+          403,
+          { "x-ratelimit-remaining": "0", "x-github-request-id": "REQ-403-RATE" }
+        )
+      : jsonResponse(
+          { message: "Resource not accessible by integration" },
+          403,
+          { "x-github-request-id": "REQ-403-FORBIDDEN" }
+        );
+
+  await assert.rejects(
+    () => githubListWorkflowRuns(config(), { owner, repo }),
+    (error: unknown) => {
+      const structured = githubStructuredError(error);
+      assert.equal(structured.error.code, "GITHUB_RATE_LIMITED");
+      assert.equal(structured.error.retryable, true);
+      return true;
+    }
+  );
+
+  rateLimited = false;
+  await assert.rejects(
+    () => githubListWorkflowRuns(config(), { owner, repo }),
+    (error: unknown) => {
+      const structured = githubStructuredError(error);
+      assert.equal(structured.error.code, "GITHUB_FORBIDDEN");
+      assert.equal(structured.error.retryable, false);
+      return true;
+    }
+  );
+});
