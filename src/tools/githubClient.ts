@@ -1264,35 +1264,195 @@ export async function githubDispatchWorkflow(config: AppConfig, input: GitHubWor
   };
 }
 
-export async function githubGetWorkflowRuns(
+function boundedPage(value: number | undefined): number {
+  return Math.max(value ?? 1, 1);
+}
+
+function boundedPerPage(value: number | undefined, fallback: number, maximum: number): number {
+  return Math.min(Math.max(value ?? fallback, 1), maximum);
+}
+
+function paginationMetadata(totalCount: number, page: number, perPage: number) {
+  return {
+    page,
+    per_page: perPage,
+    has_next_page: page * perPage < totalCount
+  };
+}
+
+export type GitHubWorkflowRunsInput = GitHubRepoRef & {
+  workflow_id?: string | number;
+  branch?: string;
+  event?: string;
+  status?: string;
+  head_sha?: string;
+  check_suite_id?: number;
+  page?: number;
+  per_page?: number;
+};
+
+export async function githubListWorkflowRuns(
   config: AppConfig,
-  input: GitHubRepoRef & { branch?: string; per_page?: number }
+  input: GitHubWorkflowRunsInput
 ) {
   assertAllowedRepo(config, input.owner, input.repo);
 
-  const params = new URLSearchParams();
-  params.set("per_page", String(Math.min(Math.max(input.per_page ?? 10, 1), 30)));
+  const page = boundedPage(input.page);
+  const perPage = boundedPerPage(input.per_page, 30, 100);
+  const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
   if (input.branch) params.set("branch", input.branch);
+  if (input.event) params.set("event", input.event);
+  if (input.status) params.set("status", input.status);
+  if (input.head_sha) params.set("head_sha", input.head_sha);
+  if (input.check_suite_id !== undefined) params.set("check_suite_id", String(input.check_suite_id));
 
-  return githubFetch<GitHubWorkflowRunsResponse>(
+  const workflowPath = input.workflow_id === undefined
+    ? "actions/runs"
+    : `actions/workflows/${encodeURIComponent(String(input.workflow_id))}/runs`;
+  const response = await githubFetch<GitHubWorkflowRunsResponse>(
     config,
-    `/repos/${input.owner}/${input.repo}/actions/runs?${params.toString()}`
+    `/repos/${input.owner}/${input.repo}/${workflowPath}?${params.toString()}`
   );
+  const workflowRuns = input.head_sha
+    ? response.workflow_runs.filter((run) => run.head_sha === input.head_sha)
+    : response.workflow_runs;
+
+  return {
+    ...response,
+    workflow_runs: workflowRuns,
+    matched_count: workflowRuns.length,
+    filters: {
+      workflow_id: input.workflow_id,
+      branch: input.branch,
+      event: input.event,
+      status: input.status,
+      head_sha: input.head_sha,
+      check_suite_id: input.check_suite_id
+    },
+    ...paginationMetadata(response.total_count, page, perPage)
+  };
+}
+
+export async function githubGetWorkflowRuns(
+  config: AppConfig,
+  input: GitHubWorkflowRunsInput
+) {
+  return githubListWorkflowRuns(config, input);
+}
+
+export async function githubGetWorkflowRun(
+  config: AppConfig,
+  input: GitHubRepoRef & { run_id: number; expected_head_sha?: string }
+) {
+  assertAllowedRepo(config, input.owner, input.repo);
+
+  const run = await githubFetch<GitHubWorkflowRun>(
+    config,
+    `/repos/${input.owner}/${input.repo}/actions/runs/${input.run_id}`
+  );
+
+  if (input.expected_head_sha && run.head_sha !== input.expected_head_sha) {
+    throw new GitHubApiError({
+      code: "GITHUB_VALIDATION_FAILED",
+      status: 409,
+      message: `Workflow run head SHA mismatch: expected ${input.expected_head_sha}, actual ${run.head_sha ?? "missing"}`,
+      retryable: false
+    });
+  }
+
+  return run;
+}
+
+export async function githubListWorkflowRunJobs(
+  config: AppConfig,
+  input: GitHubRepoRef & {
+    run_id: number;
+    filter?: "latest" | "all";
+    page?: number;
+    per_page?: number;
+  }
+) {
+  assertAllowedRepo(config, input.owner, input.repo);
+
+  const page = boundedPage(input.page);
+  const perPage = boundedPerPage(input.per_page, 30, 100);
+  const params = new URLSearchParams({
+    filter: input.filter ?? "latest",
+    page: String(page),
+    per_page: String(perPage)
+  });
+  const response = await githubFetch<GitHubWorkflowJobsResponse>(
+    config,
+    `/repos/${input.owner}/${input.repo}/actions/runs/${input.run_id}/jobs?${params.toString()}`
+  );
+
+  return {
+    ...response,
+    ...paginationMetadata(response.total_count, page, perPage)
+  };
 }
 
 export async function githubListWorkflowRunArtifacts(
   config: AppConfig,
-  input: GitHubRepoRef & { run_id: number; per_page?: number }
+  input: GitHubRepoRef & { run_id: number; page?: number; per_page?: number }
 ) {
   assertAllowedRepo(config, input.owner, input.repo);
 
-  const params = new URLSearchParams();
-  params.set("per_page", String(Math.min(Math.max(input.per_page ?? 30, 1), 100)));
-
-  return githubFetch<GitHubArtifactsResponse>(
+  const page = boundedPage(input.page);
+  const perPage = boundedPerPage(input.per_page, 30, 100);
+  const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+  const response = await githubFetch<GitHubArtifactsResponse>(
     config,
     `/repos/${input.owner}/${input.repo}/actions/runs/${input.run_id}/artifacts?${params.toString()}`
   );
+
+  return {
+    ...response,
+    ...paginationMetadata(response.total_count, page, perPage)
+  };
+}
+
+export async function githubListCheckRunsForRef(
+  config: AppConfig,
+  input: GitHubRepoRef & {
+    ref: string;
+    check_name?: string;
+    status?: "queued" | "in_progress" | "completed";
+    filter?: "latest" | "all";
+    app_id?: number;
+    page?: number;
+    per_page?: number;
+  }
+) {
+  assertAllowedRepo(config, input.owner, input.repo);
+
+  const page = boundedPage(input.page);
+  const perPage = boundedPerPage(input.per_page, 30, 100);
+  const params = new URLSearchParams({
+    filter: input.filter ?? "latest",
+    page: String(page),
+    per_page: String(perPage)
+  });
+  if (input.check_name) params.set("check_name", input.check_name);
+  if (input.status) params.set("status", input.status);
+  if (input.app_id !== undefined) params.set("app_id", String(input.app_id));
+
+  const response = await githubFetch<GitHubCheckRunsResponse>(
+    config,
+    `/repos/${input.owner}/${input.repo}/commits/${encodeURIComponent(input.ref)}/check-runs?${params.toString()}`
+  );
+  const isExactSha = /^[0-9a-f]{40}$/i.test(input.ref);
+  const checkRuns = isExactSha
+    ? response.check_runs.filter((run) => run.head_sha.toLowerCase() === input.ref.toLowerCase())
+    : response.check_runs;
+
+  return {
+    ...response,
+    check_runs: checkRuns,
+    matched_count: checkRuns.length,
+    ref: input.ref,
+    ...paginationMetadata(response.total_count, page, perPage)
+  };
 }
 
 export async function githubDownloadWorkflowArtifactZip(
