@@ -144,3 +144,23 @@ test("readiness errors preserve structure and avoid secret leakage", () => {
   assert.equal(blocked?.error.retryable, false);
   assert.equal(serialized.includes("super-secret"), false);
 });
+
+test("workflow discovery capabilities remain available in read-only mode", () => {
+  const degraded = config({ writeEnabled: false });
+  const methods = getRuntimeCapabilities(degraded);
+  const required = [
+    "github_list_workflow_runs",
+    "github_get_workflow_run",
+    "github_list_workflow_run_jobs",
+    "github_list_workflow_run_artifacts",
+    "github_list_check_runs_for_ref"
+  ];
+
+  for (const name of required) {
+    const capability = methods.find((method) => method.name === name);
+    assert.equal(capability?.read_only, true, `${name} must be read-only`);
+    assert.equal(capability?.write_capable, false, `${name} must not be write-capable`);
+    assert.equal(capability?.enabled, true, `${name} must remain enabled in degraded mode`);
+    assert.equal(shouldExposeCapability(degraded, name), true, `${name} must remain exposed`);
+  }
+});

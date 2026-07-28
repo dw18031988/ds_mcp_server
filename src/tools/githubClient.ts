@@ -113,7 +113,113 @@ export type GitHubBinaryResult = {
 type GitHubErrorBody = {
   message?: string;
   documentation_url?: string;
+  status?: string;
 };
+
+export type GitHubApiErrorCode =
+  | "GITHUB_UNAUTHORIZED"
+  | "GITHUB_FORBIDDEN"
+  | "GITHUB_NOT_FOUND"
+  | "GITHUB_VALIDATION_FAILED"
+  | "GITHUB_RATE_LIMITED"
+  | "GITHUB_UPSTREAM_ERROR";
+
+export type GitHubStructuredError = {
+  ok: false;
+  error: {
+    code: GitHubApiErrorCode;
+    status: number;
+    message: string;
+    retryable: boolean;
+    documentation_url?: string;
+    request_id?: string;
+  };
+};
+
+export class GitHubApiError extends Error {
+  readonly code: GitHubApiErrorCode;
+  readonly status: number;
+  readonly retryable: boolean;
+  readonly documentationUrl?: string;
+  readonly requestId?: string;
+
+  constructor(input: {
+    code: GitHubApiErrorCode;
+    status: number;
+    message: string;
+    retryable: boolean;
+    documentationUrl?: string;
+    requestId?: string;
+  }) {
+    super(input.message);
+    this.name = "GitHubApiError";
+    this.code = input.code;
+    this.status = input.status;
+    this.retryable = input.retryable;
+    this.documentationUrl = input.documentationUrl;
+    this.requestId = input.requestId;
+  }
+}
+
+function githubErrorCode(status: number, rateLimited = false): GitHubApiErrorCode {
+  if (status === 401) return "GITHUB_UNAUTHORIZED";
+  if (status === 403 && rateLimited) return "GITHUB_RATE_LIMITED";
+  if (status === 403) return "GITHUB_FORBIDDEN";
+  if (status === 404) return "GITHUB_NOT_FOUND";
+  if (status === 422) return "GITHUB_VALIDATION_FAILED";
+  if (status === 429) return "GITHUB_RATE_LIMITED";
+  return "GITHUB_UPSTREAM_ERROR";
+}
+
+export function githubStructuredError(error: unknown): GitHubStructuredError {
+  if (error instanceof GitHubApiError) {
+    return {
+      ok: false,
+      error: {
+        code: error.code,
+        status: error.status,
+        message: error.message,
+        retryable: error.retryable,
+        ...(error.documentationUrl ? { documentation_url: error.documentationUrl } : {}),
+        ...(error.requestId ? { request_id: error.requestId } : {})
+      }
+    };
+  }
+
+  return {
+    ok: false,
+    error: {
+      code: "GITHUB_UPSTREAM_ERROR",
+      status: 502,
+      message: error instanceof Error ? error.message : "GitHub API failed",
+      retryable: true
+    }
+  };
+}
+
+async function githubApiError(response: Response, prefix = "GitHub API failed"): Promise<GitHubApiError> {
+  let body: GitHubErrorBody = {};
+  try {
+    body = (await response.json()) as GitHubErrorBody;
+  } catch {
+    // Keep a stable error even when GitHub returns a non-JSON body.
+  }
+
+  const requestId = response.headers.get("x-github-request-id") || undefined;
+  const rateLimited =
+    response.status === 429 ||
+    response.headers.get("x-ratelimit-remaining") === "0" ||
+    /rate limit/i.test(body.message ?? "");
+  const message = body.message ? `${prefix}: ${response.status} ${body.message}` : `${prefix}: ${response.status}`;
+  return new GitHubApiError({
+    code: githubErrorCode(response.status, rateLimited),
+    status: response.status,
+    message,
+    retryable: rateLimited || response.status >= 500,
+    documentationUrl: body.documentation_url,
+    requestId
+  });
+}
 
 type GitHubContentResponse = {
   type: string;
@@ -214,18 +320,79 @@ type GitHubRepoResponse = {
   permissions?: Record<string, boolean>;
 };
 
+export type GitHubWorkflowRun = {
+  id: number;
+  workflow_id?: number;
+  check_suite_id?: number;
+  run_number?: number;
+  run_attempt?: number;
+  name?: string;
+  display_title?: string;
+  event?: string;
+  head_branch?: string;
+  head_sha?: string;
+  status?: string;
+  conclusion?: string | null;
+  html_url?: string;
+  jobs_url?: string;
+  artifacts_url?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 type GitHubWorkflowRunsResponse = {
   total_count: number;
-  workflow_runs: Array<{
+  workflow_runs: GitHubWorkflowRun[];
+};
+
+type GitHubWorkflowJobsResponse = {
+  total_count: number;
+  jobs: Array<{
     id: number;
-    name?: string;
-    head_branch?: string;
+    run_id: number;
     head_sha?: string;
+    html_url?: string | null;
     status?: string;
     conclusion?: string | null;
-    html_url?: string;
     created_at?: string;
-    updated_at?: string;
+    started_at?: string;
+    completed_at?: string | null;
+    name: string;
+    steps?: Array<{
+      name: string;
+      status: string;
+      conclusion: string | null;
+      number: number;
+      started_at?: string | null;
+      completed_at?: string | null;
+    }>;
+    labels?: string[];
+    runner_id?: number | null;
+    runner_name?: string | null;
+  }>;
+};
+
+type GitHubCheckRunsResponse = {
+  total_count: number;
+  check_runs: Array<{
+    id: number;
+    node_id?: string;
+    name: string;
+    head_sha: string;
+    status: string;
+    conclusion: string | null;
+    started_at?: string | null;
+    completed_at?: string | null;
+    html_url?: string | null;
+    details_url?: string | null;
+    external_id?: string | null;
+    app?: { id?: number; slug?: string; name?: string } | null;
+    output?: {
+      title?: string | null;
+      summary?: string | null;
+      text?: string | null;
+      annotations_count?: number;
+    };
   }>;
 };
 
@@ -345,16 +512,7 @@ async function githubFetch<T>(
   });
 
   if (!response.ok) {
-    let message = `GitHub API failed: ${response.status}`;
-
-    try {
-      const body = (await response.json()) as GitHubErrorBody;
-      if (body.message) message = `${message} ${body.message}`;
-    } catch {
-      // Keep generic message.
-    }
-
-    throw new Error(message);
+    throw await githubApiError(response);
   }
 
   return (await response.json()) as T;
@@ -408,16 +566,7 @@ async function githubFetchNoContent(
   });
 
   if (!response.ok) {
-    let message = `GitHub API failed: ${response.status}`;
-
-    try {
-      const body = (await response.json()) as GitHubErrorBody;
-      if (body.message) message = `${message} ${body.message}`;
-    } catch {
-      // Keep generic message.
-    }
-
-    throw new Error(message);
+    throw await githubApiError(response);
   }
 }
 
@@ -437,17 +586,7 @@ async function githubFetchBinary(
   });
 
   if (!response.ok) {
-    let message = `GitHub binary download failed: ${response.status}`;
-
-    try {
-      const body = (await response.json()) as GitHubErrorBody;
-      if (body.message) message = `${message} ${body.message}`;
-    } catch {
-      const text = await response.text().catch(() => "");
-      if (text) message = `${message} ${text.slice(0, 200)}`;
-    }
-
-    throw new Error(message);
+    throw await githubApiError(response, "GitHub binary download failed");
   }
 
   return {
@@ -1130,35 +1269,195 @@ export async function githubDispatchWorkflow(config: AppConfig, input: GitHubWor
   };
 }
 
-export async function githubGetWorkflowRuns(
+function boundedPage(value: number | undefined): number {
+  return Math.max(value ?? 1, 1);
+}
+
+function boundedPerPage(value: number | undefined, fallback: number, maximum: number): number {
+  return Math.min(Math.max(value ?? fallback, 1), maximum);
+}
+
+function paginationMetadata(totalCount: number, page: number, perPage: number) {
+  return {
+    page,
+    per_page: perPage,
+    has_next_page: page * perPage < totalCount
+  };
+}
+
+export type GitHubWorkflowRunsInput = GitHubRepoRef & {
+  workflow_id?: string | number;
+  branch?: string;
+  event?: string;
+  status?: string;
+  head_sha?: string;
+  check_suite_id?: number;
+  page?: number;
+  per_page?: number;
+};
+
+export async function githubListWorkflowRuns(
   config: AppConfig,
-  input: GitHubRepoRef & { branch?: string; per_page?: number }
+  input: GitHubWorkflowRunsInput
 ) {
   assertAllowedRepo(config, input.owner, input.repo);
 
-  const params = new URLSearchParams();
-  params.set("per_page", String(Math.min(Math.max(input.per_page ?? 10, 1), 30)));
+  const page = boundedPage(input.page);
+  const perPage = boundedPerPage(input.per_page, 30, 100);
+  const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
   if (input.branch) params.set("branch", input.branch);
+  if (input.event) params.set("event", input.event);
+  if (input.status) params.set("status", input.status);
+  if (input.head_sha) params.set("head_sha", input.head_sha);
+  if (input.check_suite_id !== undefined) params.set("check_suite_id", String(input.check_suite_id));
 
-  return githubFetch<GitHubWorkflowRunsResponse>(
+  const workflowPath = input.workflow_id === undefined
+    ? "actions/runs"
+    : `actions/workflows/${encodeURIComponent(String(input.workflow_id))}/runs`;
+  const response = await githubFetch<GitHubWorkflowRunsResponse>(
     config,
-    `/repos/${input.owner}/${input.repo}/actions/runs?${params.toString()}`
+    `/repos/${input.owner}/${input.repo}/${workflowPath}?${params.toString()}`
   );
+  const workflowRuns = input.head_sha
+    ? response.workflow_runs.filter((run) => run.head_sha === input.head_sha)
+    : response.workflow_runs;
+
+  return {
+    ...response,
+    workflow_runs: workflowRuns,
+    matched_count: workflowRuns.length,
+    filters: {
+      workflow_id: input.workflow_id,
+      branch: input.branch,
+      event: input.event,
+      status: input.status,
+      head_sha: input.head_sha,
+      check_suite_id: input.check_suite_id
+    },
+    ...paginationMetadata(response.total_count, page, perPage)
+  };
+}
+
+export async function githubGetWorkflowRuns(
+  config: AppConfig,
+  input: GitHubWorkflowRunsInput
+) {
+  return githubListWorkflowRuns(config, input);
+}
+
+export async function githubGetWorkflowRun(
+  config: AppConfig,
+  input: GitHubRepoRef & { run_id: number; expected_head_sha?: string }
+) {
+  assertAllowedRepo(config, input.owner, input.repo);
+
+  const run = await githubFetch<GitHubWorkflowRun>(
+    config,
+    `/repos/${input.owner}/${input.repo}/actions/runs/${input.run_id}`
+  );
+
+  if (input.expected_head_sha && run.head_sha !== input.expected_head_sha) {
+    throw new GitHubApiError({
+      code: "GITHUB_VALIDATION_FAILED",
+      status: 409,
+      message: `Workflow run head SHA mismatch: expected ${input.expected_head_sha}, actual ${run.head_sha ?? "missing"}`,
+      retryable: false
+    });
+  }
+
+  return run;
+}
+
+export async function githubListWorkflowRunJobs(
+  config: AppConfig,
+  input: GitHubRepoRef & {
+    run_id: number;
+    filter?: "latest" | "all";
+    page?: number;
+    per_page?: number;
+  }
+) {
+  assertAllowedRepo(config, input.owner, input.repo);
+
+  const page = boundedPage(input.page);
+  const perPage = boundedPerPage(input.per_page, 30, 100);
+  const params = new URLSearchParams({
+    filter: input.filter ?? "latest",
+    page: String(page),
+    per_page: String(perPage)
+  });
+  const response = await githubFetch<GitHubWorkflowJobsResponse>(
+    config,
+    `/repos/${input.owner}/${input.repo}/actions/runs/${input.run_id}/jobs?${params.toString()}`
+  );
+
+  return {
+    ...response,
+    ...paginationMetadata(response.total_count, page, perPage)
+  };
 }
 
 export async function githubListWorkflowRunArtifacts(
   config: AppConfig,
-  input: GitHubRepoRef & { run_id: number; per_page?: number }
+  input: GitHubRepoRef & { run_id: number; page?: number; per_page?: number }
 ) {
   assertAllowedRepo(config, input.owner, input.repo);
 
-  const params = new URLSearchParams();
-  params.set("per_page", String(Math.min(Math.max(input.per_page ?? 30, 1), 100)));
-
-  return githubFetch<GitHubArtifactsResponse>(
+  const page = boundedPage(input.page);
+  const perPage = boundedPerPage(input.per_page, 30, 100);
+  const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+  const response = await githubFetch<GitHubArtifactsResponse>(
     config,
     `/repos/${input.owner}/${input.repo}/actions/runs/${input.run_id}/artifacts?${params.toString()}`
   );
+
+  return {
+    ...response,
+    ...paginationMetadata(response.total_count, page, perPage)
+  };
+}
+
+export async function githubListCheckRunsForRef(
+  config: AppConfig,
+  input: GitHubRepoRef & {
+    ref: string;
+    check_name?: string;
+    status?: "queued" | "in_progress" | "completed";
+    filter?: "latest" | "all";
+    app_id?: number;
+    page?: number;
+    per_page?: number;
+  }
+) {
+  assertAllowedRepo(config, input.owner, input.repo);
+
+  const page = boundedPage(input.page);
+  const perPage = boundedPerPage(input.per_page, 30, 100);
+  const params = new URLSearchParams({
+    filter: input.filter ?? "latest",
+    page: String(page),
+    per_page: String(perPage)
+  });
+  if (input.check_name) params.set("check_name", input.check_name);
+  if (input.status) params.set("status", input.status);
+  if (input.app_id !== undefined) params.set("app_id", String(input.app_id));
+
+  const response = await githubFetch<GitHubCheckRunsResponse>(
+    config,
+    `/repos/${input.owner}/${input.repo}/commits/${encodeURIComponent(input.ref)}/check-runs?${params.toString()}`
+  );
+  const isExactSha = /^[0-9a-f]{40}$/i.test(input.ref);
+  const checkRuns = isExactSha
+    ? response.check_runs.filter((run) => run.head_sha.toLowerCase() === input.ref.toLowerCase())
+    : response.check_runs;
+
+  return {
+    ...response,
+    check_runs: checkRuns,
+    matched_count: checkRuns.length,
+    ref: input.ref,
+    ...paginationMetadata(response.total_count, page, perPage)
+  };
 }
 
 export async function githubDownloadWorkflowArtifactZip(

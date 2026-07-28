@@ -24,12 +24,17 @@ import {
   githubCreatePullRequest,
   githubDownloadArchiveZip,
   githubDownloadWorkflowArtifactZip,
+  GitHubApiError,
   githubGetRepo,
+  githubGetWorkflowRun,
   githubGetWorkflowRuns,
+  githubListCheckRunsForRef,
   githubListTree,
   githubListWorkflowRunArtifacts,
+  githubListWorkflowRunJobs,
   githubReadBinaryFile,
   githubReadFile,
+  githubStructuredError,
   githubUpsertFile
 } from "./tools/githubClient.js";
 import { githubGenerateIntegrityArtifacts } from "./tools/githubIntegrityArtifacts.js";
@@ -1135,7 +1140,10 @@ function normalizePathForDashboard(pathname: string): string {
     .replace(/^\/api\/agent-runs\/[^/]+$/, "/api/agent-runs/{run_id}")
     .replace(/^\/internal\/agent-runs\/[^/]+\/result$/, "/internal/agent-runs/{run_id}/result")
     .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)\/pull-requests\/\d+\/comments$/, "/api/github/repos/{owner}/{repo}/pull-requests/{pr_number}/comments")
+    .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/runs\/\d+\/jobs$/, "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}/jobs")
     .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/runs\/\d+\/artifacts$/, "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts")
+    .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/runs\/\d+$/, "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}")
+    .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)\/commits\/[^/]+\/check-runs$/, "/api/github/repos/{owner}/{repo}/commits/{ref}/check-runs")
     .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/artifacts\/\d+\/zip$/, "/api/github/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip")
     .replace(/^\/api\/github\/repos\/([^/]+)\/([^/]+)(\/.*)?$/, (_match, _owner, _repo, suffix) => {
       return `/api/github/repos/{owner}/{repo}${suffix ?? ""}`;
@@ -1372,6 +1380,11 @@ function getLegacyCapabilities() {
       "github_upsert_file",
       "github_create_pr",
       "github_get_workflow_runs",
+      "github_list_workflow_runs",
+      "github_get_workflow_run",
+      "github_list_workflow_run_jobs",
+      "github_list_workflow_run_artifacts",
+      "github_list_check_runs_for_ref",
       "github_comment_pr"
     ],
     rest_paths: [
@@ -1408,7 +1421,10 @@ function getLegacyCapabilities() {
       "/api/github/repos/{owner}/{repo}/pull-requests",
       "/api/github/repos/{owner}/{repo}/pull-requests/{pr_number}/comments",
       "/api/github/repos/{owner}/{repo}/workflow-runs",
+      "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}",
+      "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}/jobs",
       "/api/github/repos/{owner}/{repo}/actions/runs/{run_id}/artifacts",
+      "/api/github/repos/{owner}/{repo}/commits/{ref}/check-runs",
       "/api/github/repos/{owner}/{repo}/actions/artifacts/{artifact_id}/zip",
       "/api/github/repos/{owner}/{repo}/archive",
       "/api/github/repos/{owner}/{repo}/upload-sessions",
@@ -1893,6 +1909,45 @@ async function handleGitHubRestApi(
       return true;
     }
 
+    const workflowRunMatch = url.pathname.match(
+      /^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/runs\/(\d+)$/
+    );
+
+    if (req.method === "GET" && workflowRunMatch) {
+      sendJson(
+        res,
+        200,
+        await githubGetWorkflowRun(config, {
+          owner: decodeURIComponent(workflowRunMatch[1] ?? ""),
+          repo: decodeURIComponent(workflowRunMatch[2] ?? ""),
+          run_id: parsePositiveInt(workflowRunMatch[3], "run_id"),
+          expected_head_sha: url.searchParams.get("expected_head_sha") || undefined
+        })
+      );
+      return true;
+    }
+
+    const runJobsMatch = url.pathname.match(
+      /^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/runs\/(\d+)\/jobs$/
+    );
+
+    if (req.method === "GET" && runJobsMatch) {
+      const filterParam = url.searchParams.get("filter");
+      sendJson(
+        res,
+        200,
+        await githubListWorkflowRunJobs(config, {
+          owner: decodeURIComponent(runJobsMatch[1] ?? ""),
+          repo: decodeURIComponent(runJobsMatch[2] ?? ""),
+          run_id: parsePositiveInt(runJobsMatch[3], "run_id"),
+          filter: filterParam === "all" ? "all" : "latest",
+          page: asNumber(Number(url.searchParams.get("page") || 1), 1),
+          per_page: asNumber(Number(url.searchParams.get("per_page") || 30), 30)
+        })
+      );
+      return true;
+    }
+
     const runArtifactsMatch = url.pathname.match(
       /^\/api\/github\/repos\/([^/]+)\/([^/]+)\/actions\/runs\/(\d+)\/artifacts$/
     );
@@ -1905,6 +1960,36 @@ async function handleGitHubRestApi(
           owner: decodeURIComponent(runArtifactsMatch[1] ?? ""),
           repo: decodeURIComponent(runArtifactsMatch[2] ?? ""),
           run_id: parsePositiveInt(runArtifactsMatch[3], "run_id"),
+          page: asNumber(Number(url.searchParams.get("page") || 1), 1),
+          per_page: asNumber(Number(url.searchParams.get("per_page") || 30), 30)
+        })
+      );
+      return true;
+    }
+
+    const checkRunsMatch = url.pathname.match(
+      /^\/api\/github\/repos\/([^/]+)\/([^/]+)\/commits\/([^/]+)\/check-runs$/
+    );
+
+    if (req.method === "GET" && checkRunsMatch) {
+      const statusParam = url.searchParams.get("status");
+      const filterParam = url.searchParams.get("filter");
+      const appIdParam = url.searchParams.get("app_id");
+      sendJson(
+        res,
+        200,
+        await githubListCheckRunsForRef(config, {
+          owner: decodeURIComponent(checkRunsMatch[1] ?? ""),
+          repo: decodeURIComponent(checkRunsMatch[2] ?? ""),
+          ref: decodeURIComponent(checkRunsMatch[3] ?? ""),
+          check_name: url.searchParams.get("check_name") || undefined,
+          status:
+            statusParam === "queued" || statusParam === "in_progress" || statusParam === "completed"
+              ? statusParam
+              : undefined,
+          filter: filterParam === "all" ? "all" : "latest",
+          app_id: appIdParam ? parsePositiveInt(appIdParam, "app_id") : undefined,
+          page: asNumber(Number(url.searchParams.get("page") || 1), 1),
           per_page: asNumber(Number(url.searchParams.get("per_page") || 30), 30)
         })
       );
@@ -1999,13 +2084,23 @@ async function handleGitHubRestApi(
     const workflowMatch = repoRoute(url, "workflow-runs");
 
     if (req.method === "GET" && workflowMatch) {
+      const checkSuiteIdParam = url.searchParams.get("check_suite_id");
+      const workflowIdParam = url.searchParams.get("workflow_id");
       sendJson(
         res,
         200,
         await githubGetWorkflowRuns(config, {
           ...repoInput(workflowMatch),
+          workflow_id: workflowIdParam || undefined,
           branch: url.searchParams.get("branch") || undefined,
-          per_page: asNumber(Number(url.searchParams.get("per_page") || 10), 10)
+          event: url.searchParams.get("event") || undefined,
+          status: url.searchParams.get("status") || undefined,
+          head_sha: url.searchParams.get("head_sha") || undefined,
+          check_suite_id: checkSuiteIdParam
+            ? parsePositiveInt(checkSuiteIdParam, "check_suite_id")
+            : undefined,
+          page: asNumber(Number(url.searchParams.get("page") || 1), 1),
+          per_page: asNumber(Number(url.searchParams.get("per_page") || 30), 30)
         })
       );
       return true;
@@ -2053,6 +2148,11 @@ async function handleGitHubRestApi(
         error: "Invalid GitHub payload",
         details: error.flatten()
       });
+      return true;
+    }
+
+    if (error instanceof GitHubApiError) {
+      sendJson(res, error.status, githubStructuredError(error));
       return true;
     }
 

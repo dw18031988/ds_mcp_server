@@ -10,13 +10,18 @@ import {
   githubDownloadArchiveZip,
   githubDownloadWorkflowArtifactZip,
   githubGetRepo,
+  githubGetWorkflowRun,
   githubGetWorkflowRuns,
+  githubListCheckRunsForRef,
   githubListTree,
   githubListWorkflowRunArtifacts,
+  githubListWorkflowRunJobs,
+  githubListWorkflowRuns,
   githubMarkPullRequestReadyForReview,
   githubMergePullRequest,
   githubReadBinaryFile,
   githubReadFile,
+  githubStructuredError,
   githubUpsertFile,
   type GitHubBinaryResult
 } from "./tools/githubClient.js";
@@ -68,6 +73,23 @@ function textOutput(output: unknown): ToolTextResult {
     structuredContent: toStructuredContent(output),
     content: [{ type: "text", text: JSON.stringify(output) }]
   };
+}
+
+function githubErrorOutput(error: unknown) {
+  const structured = githubStructuredError(error);
+  return {
+    structuredContent: structured,
+    content: [{ type: "text" as const, text: JSON.stringify(structured) }],
+    isError: true
+  };
+}
+
+async function githubTextOutput(operation: () => Promise<unknown>) {
+  try {
+    return textOutput(await operation());
+  } catch (error) {
+    return githubErrorOutput(error);
+  }
 }
 
 export function createMcpServer(config: AppConfig): McpServer {
@@ -435,36 +457,115 @@ export function createMcpServer(config: AppConfig): McpServer {
     }
   );
 
+  const workflowRunsInputSchema = {
+    owner: z.string().min(1),
+    repo: z.string().min(1),
+    workflow_id: z.union([z.string().min(1), z.number().int().positive()]).optional(),
+    branch: z.string().min(1).optional(),
+    event: z.string().min(1).optional(),
+    status: z.string().min(1).optional(),
+    head_sha: z.string().regex(/^[0-9a-f]{40}$/i).optional(),
+    check_suite_id: z.number().int().positive().optional(),
+    page: z.number().int().positive().optional(),
+    per_page: z.number().int().min(1).max(100).optional()
+  };
+
   server.registerTool(
     "github_get_workflow_runs",
     {
       title: "Get GitHub Actions workflow runs",
-      description: "Get recent GitHub Actions workflow runs for an allowlisted repository.",
+      description:
+        "Compatibility alias for paginated workflow-run discovery. Supports exact event, branch, head SHA, status, workflow and check-suite filters.",
+      inputSchema: workflowRunsInputSchema,
+      annotations: { readOnlyHint: true }
+    },
+    async (input) => githubTextOutput(() => githubGetWorkflowRuns(config, input))
+  );
+
+  server.registerTool(
+    "github_list_workflow_runs",
+    {
+      title: "List GitHub Actions workflow runs",
+      description:
+        "List paginated workflow runs with exact event, branch, head SHA, status, workflow and check-suite filters. Use event=push, branch=main and head_sha=<merge_sha> for G5 discovery.",
+      inputSchema: workflowRunsInputSchema,
+      annotations: { readOnlyHint: true }
+    },
+    async (input) => githubTextOutput(() => githubListWorkflowRuns(config, input))
+  );
+
+  server.registerTool(
+    "github_get_workflow_run",
+    {
+      title: "Get GitHub Actions workflow run",
+      description:
+        "Get one workflow run by run_id. expected_head_sha rejects stale or unrelated runs before evidence is accepted.",
       inputSchema: {
         owner: z.string().min(1),
         repo: z.string().min(1),
-        branch: z.string().optional(),
-        per_page: z.number().int().min(1).max(30).optional()
+        run_id: z.number().int().positive(),
+        expected_head_sha: z.string().regex(/^[0-9a-f]{40}$/i).optional()
       },
       annotations: { readOnlyHint: true }
     },
-    async (input) => textOutput(await githubGetWorkflowRuns(config, input))
+    async (input) => githubTextOutput(() => githubGetWorkflowRun(config, input))
+  );
+
+  server.registerTool(
+    "github_list_workflow_run_jobs",
+    {
+      title: "List GitHub Actions workflow run jobs",
+      description: "List paginated jobs for a specific workflow run.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        run_id: z.number().int().positive(),
+        filter: z.enum(["latest", "all"]).optional(),
+        page: z.number().int().positive().optional(),
+        per_page: z.number().int().min(1).max(100).optional()
+      },
+      annotations: { readOnlyHint: true }
+    },
+    async (input) => githubTextOutput(() => githubListWorkflowRunJobs(config, input))
   );
 
   server.registerTool(
     "github_list_workflow_run_artifacts",
     {
       title: "List GitHub Actions workflow run artifacts",
-      description: "List artifacts for a specific GitHub Actions workflow run in an allowlisted repository.",
+      description: "List paginated artifacts for a specific GitHub Actions workflow run.",
       inputSchema: {
         owner: z.string().min(1),
         repo: z.string().min(1),
         run_id: z.number().int().positive(),
+        page: z.number().int().positive().optional(),
         per_page: z.number().int().min(1).max(100).optional()
       },
       annotations: { readOnlyHint: true }
     },
-    async (input) => textOutput(await githubListWorkflowRunArtifacts(config, input))
+    async (input) => githubTextOutput(() => githubListWorkflowRunArtifacts(config, input))
+  );
+
+  server.registerTool(
+    "github_list_check_runs_for_ref",
+    {
+      title: "List GitHub check runs for ref",
+      description:
+        "List paginated check runs for a branch or exact commit SHA. Exact 40-character SHAs are filtered again client-side before evidence is returned.",
+      inputSchema: {
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        ref: z.string().min(1),
+        check_name: z.string().min(1).optional(),
+        status: z.enum(["queued", "in_progress", "completed"]).optional(),
+        filter: z.enum(["latest", "all"]).optional(),
+        app_id: z.number().int().positive().optional(),
+        page: z.number().int().positive().optional(),
+        per_page: z.number().int().min(1).max(100).optional()
+      },
+      annotations: { readOnlyHint: true }
+    },
+    async (input) => githubTextOutput(() => githubListCheckRunsForRef(config, input))
   );
 
   server.registerTool(
